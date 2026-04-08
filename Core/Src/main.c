@@ -22,8 +22,12 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "usbd_cdc_if.h"
 #include <stdio.h>
+#include "usbd_cdc_if.h"
+#include "motors.h"
+#include "pid_control.h"
+#include "radio.h"
+#include "lsm6ds3.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,39 +49,18 @@ uint8_t Is_First_Captured[4] = {0,0,0,0};  // Flags for 4 channels
 uint32_t Pulse_Width[4] = {0,0,0,0};      // Resulting 1000-2000us values
 
 
-/* User constants for the 50cm aircraft */
-#define RC_MIN 1000
-#define RC_MAX 2000
 
 
-#define LSM6DS3_ADDR_WHO_AM_I  0x0F
-#define LSM6DS3_WHO_AM_I_VAL   0x69
-
-#define CS_GPIO_Port GPIOA
-#define CS_Pin GPIO_PIN_4
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 
 SPI_HandleTypeDef hspi1;
-
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
-void update_motors(uint32_t m1, uint32_t m2, uint32_t m3, uint32_t m4) ;
-void IMU_Write_Reg(uint8_t reg, uint8_t value) ;
 
-uint8_t IMU_Read_Reg(uint8_t reg_addr) ;
-
-typedef struct {
-    int16_t gyro_x, gyro_y, gyro_z;
-    int16_t acc_x, acc_y, acc_z;
-} IMU_Data_t;
-
-volatile IMU_Data_t raw_sensor_data;
-volatile uint8_t imu_data_ready = 0;
-volatile uint8_t sensor_data_read = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -92,7 +75,6 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t USB_transmit_buffer[256];
 uint16_t transmit_size = 0;
-uint8_t IMU_Init(void) ;
 
 /* USER CODE END PFP */
 
@@ -160,33 +142,10 @@ int main(void)
   while (1)
   {
 
-	  if(sensor_data_read)
-	  {
-		  sensor_data_read = 0;
-		  double angX = raw_sensor_data.gyro_x * 0.0175f;
-		  double angY = raw_sensor_data.gyro_y * 0.0175f;
-		  double angZ = raw_sensor_data.gyro_z * 0.0175f;
 
 
 
-		  double accX = raw_sensor_data.acc_x * 0.000244f;
-		  double accY = raw_sensor_data.acc_y * 0.000244f;
-		  double accZ = raw_sensor_data.acc_z * 0.000244f;
 
-//		  transmit_size = sprintf((char*)USB_transmit_buffer, "\r\n%, %lu, %lu, %lu",
-//		 				Pulse_Width[0],
-//		 				Pulse_Width[1],
-//		 				Pulse_Width[2],
-//		 				Pulse_Width[3]);
-		  transmit_size = sprintf((char*)USB_transmit_buffer, "\r\n%f, %f, %f, %f, %f, %f",
-				 				angX,
-				 				angY,
-								angZ,
-								accX,
-								accY,
-								accZ);
-		 	 CDC_Transmit_HS(USB_transmit_buffer,transmit_size);
-	  }
 
 
 	  update_motors(Pulse_Width[0], Pulse_Width[0] ,Pulse_Width[0],Pulse_Width[0]) ;
@@ -552,122 +511,11 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 }
 
 
-void IMU_Write_Reg(uint8_t reg, uint8_t value) {
-    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
-    HAL_SPI_Transmit(&hspi1, &reg, 1, 10);
-    HAL_SPI_Transmit(&hspi1, &value, 1, 10);
-    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
-}
-
-uint8_t IMU_Read_Reg(uint8_t reg_addr) {
-    uint8_t command = reg_addr | 0x80; // Set MSB to 1 for Read operation
-    uint8_t read_val = 0;
-
-    // 1. Pull CS Low to select the LSM6DS3
-    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
-
-    // 2. Send the register address
-    HAL_SPI_Transmit(&hspi1, &command, 1, 10);
-
-    // 3. Receive the register data
-    HAL_SPI_Receive(&hspi1, &read_val, 1, 10);
-
-    // 4. Pull CS High to end the transaction
-    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
-
-    return read_val;
-}
-
-void update_motors(uint32_t m1, uint32_t m2, uint32_t m3, uint32_t m4) {
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, m1);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, m2);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, m3);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, m4);
-}
-
-uint8_t IMU_Init(void) {
-    uint8_t whoAmI = 0;
-
-    // 1. Check Communication
-    uint8_t reg = LSM6DS3_ADDR_WHO_AM_I | 0x80; // Read bit
-    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
-    HAL_SPI_Transmit(&hspi1, &reg, 1, 10);
-    HAL_SPI_Receive(&hspi1, &whoAmI, 1, 10);
-    HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
-
-    transmit_size = sprintf((char*)USB_transmit_buffer, "\r\nIMU init");
-   	 CDC_Transmit_HS(USB_transmit_buffer,transmit_size);
-
-    // 1. Verify Communication (Expects 0x69)
-	if (IMU_Read_Reg(0x0F) != 0x69)
-	{
-		while(1)
-		{
-	    transmit_size = sprintf((char*)USB_transmit_buffer, "\r\nlsm6ds3 comm fail");
-		}
-	   	 CDC_Transmit_HS(USB_transmit_buffer,transmit_size);
-		return 0;
-	}
-    transmit_size = sprintf((char*)USB_transmit_buffer, "\r\nlsm6ds3 comm success");
-   	 CDC_Transmit_HS(USB_transmit_buffer,transmit_size);
-    // 2. Software Reset (Recommended for clean state)
-    IMU_Write_Reg(0x12, 0x05); // SW_RESET=1, IF_INC=1 (Auto-increment for burst reads)
-    HAL_Delay(10);             // Wait for reboot
-
-    // 3. Accelerometer Config: 1.66 kHz ODR, 8g Full Scale
-    IMU_Write_Reg(0x10, 0x8C); // [1000 1100]
-
-    // 4. Gyroscope Config: 1.66 kHz ODR, 500 dps Full Scale
-    IMU_Write_Reg(0x11, 0x84); // [1000 0100]
-
-    // 5. Hardware Filtering (Crucial for Hard-Mount noise)
-    IMU_Write_Reg(0x13, 0x80); // Enable LPF2 (Secondary digital low-pass filter)
-    IMU_Write_Reg(0x17, 0x00); // Set Accel LPF2 cutoff to ODR/50 (approx 33Hz)
-
-    // 6. Interrupt Mapping (Syncs your 1.66 kHz PID loop)
-    IMU_Write_Reg(0x0D, 0x02); // Route Gyro Data Ready to INT1 pin (PC4)
-
-    // 7. Global Config
-    IMU_Write_Reg(0x12, 0x44); // BDU=1 (Block Data Update) + IF_INC=1
-
-    return 1; // Success
-}
 
 
 
 
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
-    if (GPIO_Pin == GPIO_PIN_4) { // PC4 triggered
 
-        // 1. Start SPI Burst Read (12 bytes)
-        // Address 0x22 (GyroX_L) | 0x80 (Read Bit)
-        uint8_t reg = 0x22 | 0x80;
-        uint8_t buffer[12];
-
-        // Manual CS Low
-        CS_GPIO_Port->BSRR = (uint32_t)CS_Pin << 16;
-
-        // Send address and receive 12 bytes
-        HAL_SPI_Transmit(&hspi1, &reg, 1, 10);
-        HAL_SPI_Receive(&hspi1, buffer, 12, 10);
-
-        // Manual CS High
-        CS_GPIO_Port->BSRR = CS_Pin;
-
-        // 2. Reconstruct 16-bit signed integers (Little Endian)
-        raw_sensor_data.gyro_x = (int16_t)((buffer[1] << 8) | buffer[0]);
-        raw_sensor_data.gyro_y = (int16_t)((buffer[3] << 8) | buffer[2]);
-        raw_sensor_data.gyro_z = (int16_t)((buffer[5] << 8) | buffer[4]);
-        raw_sensor_data.acc_x  = (int16_t)((buffer[7] << 8) | buffer[6]);
-        raw_sensor_data.acc_y  = (int16_t)((buffer[9] << 8) | buffer[8]);
-        raw_sensor_data.acc_z  = (int16_t)((buffer[11] << 8) | buffer[10]);
-
-        sensor_data_read = 1;
-        // 3. RUN PID & UPDATE MOTORS
-        // This is where you call your PID function immediately
-//        run_flight_control_loop();
-    }
-}
 /* USER CODE END 4 */
 
  /* MPU Configuration */

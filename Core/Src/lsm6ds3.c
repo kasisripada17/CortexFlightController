@@ -7,13 +7,17 @@
 
 #include "lsm6ds3.h"
 #include "stm32h7xx_hal.h"
-
+#include "print.h"
 // variables
 extern SPI_HandleTypeDef hspi1;
-volatile IMU_Data_t raw_sensor_data;
+volatile IMU_Data_t sensor_data;
 volatile uint8_t imu_data_ready = 0;
 volatile uint8_t sensor_data_read = 0;
-volatile IMU_Data_t raw_sensor_data;
+
+IMU_Config_t imu_offsets = {0};
+uint16_t sample_number = 0;
+Sensor_Calibration gyro_calibration = NOT_STARTED;
+
 
 //functions
 
@@ -106,33 +110,84 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
         // Manual CS High
         CS_GPIO_Port->BSRR = CS_Pin;
 
+        //calibration routine
+
+
+
         // 2. Reconstruct 16-bit signed integers (Little Endian)
-        raw_sensor_data.gyro_x = (int16_t)((buffer[1] << 8) | buffer[0]);
-        raw_sensor_data.gyro_y = (int16_t)((buffer[3] << 8) | buffer[2]);
-        raw_sensor_data.gyro_z = (int16_t)((buffer[5] << 8) | buffer[4]);
-        raw_sensor_data.acc_x  = (int16_t)((buffer[7] << 8) | buffer[6]);
-        raw_sensor_data.acc_y  = (int16_t)((buffer[9] << 8) | buffer[8]);
-        raw_sensor_data.acc_z  = (int16_t)((buffer[11] << 8) | buffer[10]);
-
-        double angX = raw_sensor_data.gyro_x * 0.0175f;
-        double angY = raw_sensor_data.gyro_y * 0.0175f;
-        double angZ = raw_sensor_data.gyro_z * 0.0175f;
+        sensor_data.raw_gyrox = (int16_t)((buffer[1] << 8) | buffer[0]);
+        sensor_data.raw_gyroy = (int16_t)((buffer[3] << 8) | buffer[2]);
+        sensor_data.raw_gyroz = (int16_t)((buffer[5] << 8) | buffer[4]);
+        sensor_data.raw_accx  = (int16_t)((buffer[7] << 8) | buffer[6]);
+        sensor_data.raw_accy  = (int16_t)((buffer[9] << 8) | buffer[8]);
+        sensor_data.raw_accz  = (int16_t)((buffer[11] << 8) | buffer[10]);
 
 
 
-        double accX = raw_sensor_data.acc_x * 0.000244f;
-        double accY = raw_sensor_data.acc_y * 0.000244f;
-        double accZ = raw_sensor_data.acc_z * 0.000244f;
 
-        //
-        //		  transmit_size = sprintf((char*)USB_transmit_buffer, "\r\n%f, %f, %f, %f, %f, %f",
-        //				 				angX,
-        //				 				angY,
-        //								angZ,
-        //								accX,
-        //								accY,
-        //								accZ);
-        //		 	 CDC_Transmit_HS(USB_transmit_buffer,transmit_size);
+
+        if (gyro_calibration != CALIBRATED) {
+
+			if (sample_number < GYRO_MAX_SAMPLES) {
+				// Gyro accumulation
+				imu_offsets.gx_offset += (float) sensor_data.raw_gyrox;
+				imu_offsets.gy_offset += (float) sensor_data.raw_gyrox;
+				imu_offsets.gz_offset += (float) sensor_data.raw_gyrox;
+
+				// Accel accumulation
+				imu_offsets.ax_offset += (float) sensor_data.raw_accx;
+				imu_offsets.ay_offset += (float) sensor_data.raw_accy;
+				imu_offsets.az_offset += (float) sensor_data.raw_accz;
+				sample_number++;
+
+			} else if (sample_number == GYRO_MAX_SAMPLES) {
+				imu_offsets.gx_offset /= (float) GYRO_MAX_SAMPLES;
+				imu_offsets.gy_offset /= (float) GYRO_MAX_SAMPLES;
+				imu_offsets.gz_offset /= (float) GYRO_MAX_SAMPLES;
+
+				// Finalize Accel
+				imu_offsets.ax_offset /= (float) ACC_MAX_SAMPLES;
+				imu_offsets.ay_offset /= (float) ACC_MAX_SAMPLES;
+
+				/* Z-Axis Logic:
+				 Assuming +/- 8g scale, 1g = 4096 LSB.
+				 We subtract 4096 because we want the offset to represent
+				 the ERROR away from 1g, not the gravity itself.
+				 */
+				imu_offsets.az_offset = (imu_offsets.az_offset
+						/ (float) ACC_MAX_SAMPLES) - 4096.0f;
+
+				gyro_calibration = CALIBRATED;
+			}
+
+		} else if (gyro_calibration == CALIBRATED)
+        {
+			sensor_data.gyro_x = ((float)sensor_data.raw_gyrox-imu_offsets.gx_offset) * 0.0175f;
+			sensor_data.gyro_y  = ((float)sensor_data.raw_gyroy-imu_offsets.gy_offset) * 0.0175f;
+			sensor_data.gyro_z= ((float)sensor_data.raw_gyroz-imu_offsets.gz_offset) * 0.0175f;
+
+			// 1. Subtract offsets and scale to G's (+/- 8g scale)
+			sensor_data.acc_x = ((float)sensor_data.raw_accx - imu_offsets.ax_offset) * 0.000244f;
+			sensor_data.acc_y = ((float)sensor_data.raw_accy - imu_offsets.ay_offset) * 0.000244f;
+			sensor_data.acc_z = ((float)sensor_data.raw_accz - imu_offsets.az_offset) * 0.000244f;
+
+			// 2. Calculate Pitch and Roll angles in degrees
+			    // atan2 returns radians, so we multiply by 57.2958 (180/PI)
+			float accel_pitch = atan2f(-sensor_data.acc_x, sqrtf(sensor_data.acc_y * sensor_data.acc_y + sensor_data.acc_z * sensor_data.acc_z)) * 57.2958f;
+			float accel_roll  = atan2f(sensor_data.acc_y, sensor_data.acc_z) * 57.2958f;
+			uint8_t buffer[256];
+			uint16_t size;
+			size = sprintf(buffer,"%f,%f,%f,%f,%f,%f,\r\n",sensor_data.gyro_x,sensor_data.gyro_y,sensor_data.gyro_z,
+					sensor_data.acc_x,sensor_data.acc_y,sensor_data.acc_z);
+			usb_print(buffer,size);
+        }
+
+
+
+
+
 
     }
 }
+
+

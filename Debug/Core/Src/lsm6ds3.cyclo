@@ -1,4 +1,4 @@
-../Core/Src/lsm6ds3.c:24:6:IMU_Write_Reg	1
-../Core/Src/lsm6ds3.c:31:9:IMU_Read_Reg	1
-../Core/Src/lsm6ds3.c:49:9:IMU_Init	2
-../Core/Src/lsm6ds3.c:95:6:HAL_GPIO_EXTI_Callback	6
+../Core/Src/lsm6ds3.c:30:6:IMU_Write_Reg	1
+../Core/Src/lsm6ds3.c:37:9:IMU_Read_Reg	1
+../Core/Src/lsm6ds3.c:55:9:IMU_Init	2
+../Core/Src/lsm6ds3.c:101:6:HAL_GPIO_EXTI_Callback	6

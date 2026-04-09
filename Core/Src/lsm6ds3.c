@@ -8,16 +8,22 @@
 #include "lsm6ds3.h"
 #include "stm32h7xx_hal.h"
 #include "print.h"
+#include "radio.h"
+#include "pid_control.h"
+#include "motors.h"
+#include "flight_control.h"
 // variables
 extern SPI_HandleTypeDef hspi1;
 volatile IMU_Data_t sensor_data;
 volatile uint8_t imu_data_ready = 0;
 volatile uint8_t sensor_data_read = 0;
-
+extern uint32_t receiver[4];
+extern Flight_Control_t fc ;
+extern receiver_t radio;
 IMU_Config_t imu_offsets = {0};
 uint16_t sample_number = 0;
 Sensor_Calibration gyro_calibration = NOT_STARTED;
-
+uint32_t motor[4];
 
 //functions
 
@@ -131,8 +137,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 			if (sample_number < GYRO_MAX_SAMPLES) {
 				// Gyro accumulation
 				imu_offsets.gx_offset += (float) sensor_data.raw_gyrox;
-				imu_offsets.gy_offset += (float) sensor_data.raw_gyrox;
-				imu_offsets.gz_offset += (float) sensor_data.raw_gyrox;
+				imu_offsets.gy_offset += (float) sensor_data.raw_gyroy;
+				imu_offsets.gz_offset += (float) sensor_data.raw_gyroz;
 
 				// Accel accumulation
 				imu_offsets.ax_offset += (float) sensor_data.raw_accx;
@@ -160,11 +166,13 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 				gyro_calibration = CALIBRATED;
 			}
 
-		} else if (gyro_calibration == CALIBRATED)
+		}
+        else if (gyro_calibration == CALIBRATED)
         {
-			sensor_data.gyro_x = ((float)sensor_data.raw_gyrox-imu_offsets.gx_offset) * 0.0175f;
-			sensor_data.gyro_y  = ((float)sensor_data.raw_gyroy-imu_offsets.gy_offset) * 0.0175f;
-			sensor_data.gyro_z= ((float)sensor_data.raw_gyroz-imu_offsets.gz_offset) * 0.0175f;
+
+			sensor_data.gyro_x = ((float)sensor_data.raw_gyrox - imu_offsets.gx_offset) * 0.0175f;
+			sensor_data.gyro_y  = ((float)sensor_data.raw_gyroy - imu_offsets.gy_offset) * 0.0175f;
+			sensor_data.gyro_z= ((float)sensor_data.raw_gyroz - imu_offsets.gz_offset) * 0.0175f;
 
 			// 1. Subtract offsets and scale to G's (+/- 8g scale)
 			sensor_data.acc_x = ((float)sensor_data.raw_accx - imu_offsets.ax_offset) * 0.000244f;
@@ -173,13 +181,16 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 			// 2. Calculate Pitch and Roll angles in degrees
 			    // atan2 returns radians, so we multiply by 57.2958 (180/PI)
-			float accel_pitch = atan2f(-sensor_data.acc_x, sqrtf(sensor_data.acc_y * sensor_data.acc_y + sensor_data.acc_z * sensor_data.acc_z)) * 57.2958f;
-			float accel_roll  = atan2f(sensor_data.acc_y, sensor_data.acc_z) * 57.2958f;
-			uint8_t buffer[256];
-			uint16_t size;
-			size = sprintf(buffer,"%f,%f,%f,%f,%f,%f,\r\n",sensor_data.gyro_x,sensor_data.gyro_y,sensor_data.gyro_z,
-					sensor_data.acc_x,sensor_data.acc_y,sensor_data.acc_z);
-			usb_print(buffer,size);
+			//float accel_pitch = atan2f(-sensor_data.acc_x, sqrtf(sensor_data.acc_y * sensor_data.acc_y + sensor_data.acc_z * sensor_data.acc_z)) * 57.2958f;
+			//float accel_roll  = atan2f(sensor_data.acc_y, sensor_data.acc_z) * 57.2958f;
+
+			flight_control();
+
+//			uint8_t buffer[256];
+//			uint16_t size;
+//			size = sprintf(buffer," %f,%f,%f\r\n",sensor_data.gyro_x,sensor_data.gyro_y,sensor_data.gyro_z
+//					);
+//			usb_print(buffer,size);
         }
 
 
@@ -189,5 +200,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
     }
 }
+
+
 
 

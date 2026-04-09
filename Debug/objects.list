@@ -1,3 +1,4 @@
+"./Core/Src/flight_control.o"
 "./Core/Src/lsm6ds3.o"
 "./Core/Src/main.o"
 "./Core/Src/motors.o"

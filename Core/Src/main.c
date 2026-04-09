@@ -43,11 +43,6 @@
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 /* Private variables ---------------------------------------------------------*/
-uint32_t IC_Val1 = 0, IC_Val2 = 0;
-uint32_t Difference = 0;
-uint8_t Is_First_Captured[4] = {0,0,0,0};  // Flags for 4 channels
-uint32_t Pulse_Width[4] = {0,0,0,0};      // Resulting 1000-2000us values
-
 
 
 
@@ -148,7 +143,7 @@ int main(void)
 
 
 
-	  update_motors(Pulse_Width[0], Pulse_Width[0] ,Pulse_Width[0],Pulse_Width[0]) ;
+	 // update_motors(Pulse_Width[0], Pulse_Width[0] ,Pulse_Width[0],Pulse_Width[0]) ;
 
     /* USER CODE END WHILE */
 
@@ -468,47 +463,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
-{
-    if (htim->Instance == TIM1)
-    {
-        uint32_t channel_index = 0;
-        uint32_t active_channel = 0;
-
-        // Identify which channel triggered the interrupt
-        if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) { channel_index = 0; active_channel = TIM_CHANNEL_1; }
-        else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_2) { channel_index = 1; active_channel = TIM_CHANNEL_2; }
-        else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_3) { channel_index = 2; active_channel = TIM_CHANNEL_3; }
-        else if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_4) { channel_index = 3; active_channel = TIM_CHANNEL_4; }
-
-        if (Is_First_Captured[channel_index] == 0) // First edge (Rising)
-        {
-            IC_Val1 = HAL_TIM_ReadCapturedValue(htim, active_channel);
-            Is_First_Captured[channel_index] = 1;
-
-            // Switch polarity to look for the Falling edge
-            __HAL_TIM_SET_CAPTUREPOLARITY(htim, active_channel, TIM_INPUTCHANNELPOLARITY_FALLING);
-        }
-        else // Second edge (Falling)
-        {
-            IC_Val2 = HAL_TIM_ReadCapturedValue(htim, active_channel);
-
-            if (IC_Val2 > IC_Val1)
-            {
-                Pulse_Width[channel_index] = IC_Val2 - IC_Val1;
-            }
-            else if (IC_Val1 > IC_Val2) // Handle Timer Overflow
-            {
-                Pulse_Width[channel_index] = (0xFFFF - IC_Val1) + IC_Val2;
-            }
-
-            Is_First_Captured[channel_index] = 0;
-
-            // Reset polarity to Rising edge for next pulse
-            __HAL_TIM_SET_CAPTUREPOLARITY(htim, active_channel, TIM_INPUTCHANNELPOLARITY_RISING);
-        }
-    }
-}
 
 
 

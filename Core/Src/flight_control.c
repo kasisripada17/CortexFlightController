@@ -69,10 +69,7 @@ void Mix_Motors( float r_cmd, float p_cmd, float y_cmd) {
     float m[4];
 
     // Kill motors immediately if not ARMED
-    if (flight_mode != ARMED) {
-        	update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
-        return;
-    }
+
 
     // Standard Quad-X Mix
     m[0] = radio.throttle - p_cmd - r_cmd + y_cmd; // Front Right
@@ -95,17 +92,25 @@ void Mix_Motors( float r_cmd, float p_cmd, float y_cmd) {
 
 void flight_control(void) {
 
+	update_arm_status();
 	const float dt = 0.0006024f; // 1.66 kHz period
+	if (flight_mode == ARMED) {
+		float target_roll = normalize_radio(radio.roll) * 250.0f;
+		float target_pitch = normalize_radio(radio.pitch) * 250.0f;
+		float target_yaw = normalize_radio(radio.yaw) * 300.0f;
 
-	float target_roll = normalize_radio(radio.roll) * 250.0f;
-	float target_pitch = normalize_radio(radio.pitch) * 250.0f;
-	float target_yaw = normalize_radio(radio.yaw) * 300.0f;
+		// 2. Compute PID outputs
+		float roll_cmd = PID_Compute(&fc.roll, target_roll, sensor_data.gyro_x, dt);
+		float pitch_cmd = PID_Compute(&fc.pitch, target_pitch, sensor_data.gyro_y, dt);
+		float yaw_cmd = PID_Compute(&fc.yaw, target_yaw, sensor_data.gyro_z, dt);
+		Mix_Motors(roll_cmd, pitch_cmd, yaw_cmd);
 
-	// 2. Compute PID outputs
-	float roll_cmd = PID_Compute(&fc.roll, target_roll, sensor_data.gyro_x, dt);
-	float pitch_cmd = PID_Compute(&fc.pitch, target_pitch, sensor_data.gyro_y, dt);
-	float yaw_cmd = PID_Compute(&fc.yaw, target_yaw, sensor_data.gyro_z, dt);
-	 Mix_Motors(  roll_cmd,  pitch_cmd,  yaw_cmd) ;
+	}
+	else if (flight_mode != ARMED) {
+        	update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
+        return;
+    }
+
 
 
 }

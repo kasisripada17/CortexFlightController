@@ -1,6 +1,7 @@
 
 #include "radio.h"
-
+#include "print.h"
+#include "motors.h"
 uint32_t IC_Val1 = 0, IC_Val2 = 0;
 uint32_t Difference = 0;
 uint8_t Is_First_Captured[4] = {0,0,0,0};  // Flags for 4 channels
@@ -58,10 +59,11 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
             // Reset polarity to Rising edge for next pulse
             __HAL_TIM_SET_CAPTUREPOLARITY(htim, active_channel, TIM_INPUTCHANNELPOLARITY_RISING);
         }
-        radio.throttle = receiver[0];
-        radio.roll = receiver[1];
-        radio.pitch = receiver[2];
-        radio.yaw = receiver[3];
+        radio.throttle = (float)receiver[0];
+        radio.roll = (float)receiver[1];
+        radio.pitch = (float)receiver[2];
+        radio.yaw = (float)receiver[3];
+
 
     }
 }

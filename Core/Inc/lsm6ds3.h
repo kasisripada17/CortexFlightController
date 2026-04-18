@@ -15,8 +15,8 @@
 #define LSM6DS3_WHO_AM_I_VAL   0x69
 #define CS_GPIO_Port GPIOA
 #define CS_Pin GPIO_PIN_4
-#define GYRO_MAX_SAMPLES 5000
-#define ACC_MAX_SAMPLES 5000
+#define GYRO_MAX_SAMPLES 2000
+#define ACC_MAX_SAMPLES 2000
 
 typedef struct {
     int16_t raw_gyrox, raw_gyroy, raw_gyroz;

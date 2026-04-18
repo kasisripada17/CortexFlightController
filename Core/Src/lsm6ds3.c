@@ -12,6 +12,7 @@
 #include "pid_control.h"
 #include "motors.h"
 #include "flight_control.h"
+#include <stdbool.h>
 // variables
 extern SPI_HandleTypeDef hspi1;
 volatile IMU_Data_t sensor_data;
@@ -24,7 +25,7 @@ IMU_Config_t imu_offsets = {0};
 uint16_t sample_number = 0;
 Sensor_Calibration gyro_calibration = NOT_STARTED;
 uint32_t motor[4];
-
+extern bool start_gyro_calibration;
 //functions
 
 void IMU_Write_Reg(uint8_t reg, uint8_t value) {
@@ -132,38 +133,40 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 
 
-        if (gyro_calibration != CALIBRATED) {
+        if (start_gyro_calibration && gyro_calibration != CALIBRATED) {
+			if (HAL_GetTick() > 3000) {
+				if (sample_number < GYRO_MAX_SAMPLES) {
+					// gyro accumulation
+					imu_offsets.gx_offset += (float) sensor_data.raw_gyrox;
+					imu_offsets.gy_offset += (float) sensor_data.raw_gyroy;
+					imu_offsets.gz_offset += (float) sensor_data.raw_gyroz;
 
-			if (sample_number < GYRO_MAX_SAMPLES) {
-				// Gyro accumulation
-				imu_offsets.gx_offset += (float) sensor_data.raw_gyrox;
-				imu_offsets.gy_offset += (float) sensor_data.raw_gyroy;
-				imu_offsets.gz_offset += (float) sensor_data.raw_gyroz;
+					// accel accumulation
+					imu_offsets.ax_offset += (float) sensor_data.raw_accx;
+					imu_offsets.ay_offset += (float) sensor_data.raw_accy;
+					imu_offsets.az_offset += (float) sensor_data.raw_accz;
+					sample_number++;
 
-				// Accel accumulation
-				imu_offsets.ax_offset += (float) sensor_data.raw_accx;
-				imu_offsets.ay_offset += (float) sensor_data.raw_accy;
-				imu_offsets.az_offset += (float) sensor_data.raw_accz;
-				sample_number++;
+				} else if (sample_number == GYRO_MAX_SAMPLES) {
+					imu_offsets.gx_offset /= (float) GYRO_MAX_SAMPLES;
+					imu_offsets.gy_offset /= (float) GYRO_MAX_SAMPLES;
+					imu_offsets.gz_offset /= (float) GYRO_MAX_SAMPLES;
 
-			} else if (sample_number == GYRO_MAX_SAMPLES) {
-				imu_offsets.gx_offset /= (float) GYRO_MAX_SAMPLES;
-				imu_offsets.gy_offset /= (float) GYRO_MAX_SAMPLES;
-				imu_offsets.gz_offset /= (float) GYRO_MAX_SAMPLES;
+					// Finalize Accel
+					imu_offsets.ax_offset /= (float) ACC_MAX_SAMPLES;
+					imu_offsets.ay_offset /= (float) ACC_MAX_SAMPLES;
 
-				// Finalize Accel
-				imu_offsets.ax_offset /= (float) ACC_MAX_SAMPLES;
-				imu_offsets.ay_offset /= (float) ACC_MAX_SAMPLES;
+					/* Z-Axis Logic:
+					 Assuming +/- 8g scale, 1g = 4096 LSB.
+					 We subtract 4096 because we want the offset to represent
+					 the ERROR away from 1g, not the gravity itself.
+					 */
+					imu_offsets.az_offset = (imu_offsets.az_offset
+							/ (float) ACC_MAX_SAMPLES) - 4096.0f;
 
-				/* Z-Axis Logic:
-				 Assuming +/- 8g scale, 1g = 4096 LSB.
-				 We subtract 4096 because we want the offset to represent
-				 the ERROR away from 1g, not the gravity itself.
-				 */
-				imu_offsets.az_offset = (imu_offsets.az_offset
-						/ (float) ACC_MAX_SAMPLES) - 4096.0f;
-
-				gyro_calibration = CALIBRATED;
+					gyro_calibration = CALIBRATED;
+					start_gyro_calibration = false;
+				}
 			}
 
 		}
@@ -186,11 +189,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 			flight_control();
 
-//			uint8_t buffer[256];
-//			uint16_t size;
-//			size = sprintf(buffer," %f,%f,%f\r\n",sensor_data.gyro_x,sensor_data.gyro_y,sensor_data.gyro_z
-//					);
-//			usb_print(buffer,size);
+
         }
 
 

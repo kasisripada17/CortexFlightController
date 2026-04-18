@@ -28,10 +28,14 @@
 #include "radio.h"
 #include "lsm6ds3.h"
 #include "print.h"
+#include "radio.h"
+#include "flight_control.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+extern receiver_t radio;
 
 /* USER CODE END PTD */
 
@@ -70,7 +74,7 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t USB_transmit_buffer[256];
 uint16_t transmit_size = 0;
-
+uint8_t esc_calibration;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -116,9 +120,11 @@ int main(void)
   MX_SPI1_Init();
   MX_TIM1_Init();
   MX_TIM2_Init();
+  HAL_TIM_Base_MspInit(&htim2);
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   /* Start Input Capture for all 4 channels on TIM1 */
+
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1); // PE9
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_2); // PE11
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_3); // PE13
@@ -130,6 +136,13 @@ int main(void)
   HAL_NVIC_EnableIRQ(EXTI4_IRQn);
   IMU_Init();
 
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
+
+	update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -137,13 +150,26 @@ int main(void)
   while (1)
   {
 
+//		static uint32_t prev_time = 0;
+//		if (HAL_GetTick() - prev_time > 100) {
+//			prev_time = HAL_GetTick();
+//			uint8_t buffer[256];
+//			uint16_t size;
+//			size = sprintf(buffer, "T=%f, R=%f, P=%f, Y=%f\r\n", radio.throttle,
+//					radio.roll, radio.pitch, radio.yaw);
+//			usb_print(buffer, size);
+//			//update_motors((uint32_t)radio.throttle,(uint32_t)radio.throttle,(uint32_t)radio.throttle,(uint32_t)radio.throttle);
+//
+//		}
+//
 
 
+		if (esc_calibration) {
+			update_motors((uint32_t) radio.throttle, (uint32_t) radio.throttle,
+					(uint32_t) radio.throttle, (uint32_t) radio.throttle);
 
+		}
 
-
-
-	 // update_motors(Pulse_Width[0], Pulse_Width[0] ,Pulse_Width[0],Pulse_Width[0]) ;
 
     /* USER CODE END WHILE */
 
@@ -423,6 +449,7 @@ static void MX_TIM2_Init(void)
 
 }
 
+
 /**
   * @brief GPIO Initialization Function
   * @param None
@@ -450,6 +477,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP; // Must be Alternate Function Push-Pull
+  GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
 
   /*Configure GPIO pin : int_Pin */
   GPIO_InitStruct.Pin = int_Pin;

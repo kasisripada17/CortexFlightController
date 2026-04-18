@@ -4,9 +4,9 @@
 
 Flight_Control_t fc = {
     // Axis:  {Kp,    Ki,    Kd,    integ, last_in, i_limit, out_limit}
-    .roll  = {0.15f, 0.05f, 0.003f, 0.0f, 0.0f, 400.0f, 500.0f},
-    .pitch = {0.15f, 0.05f, 0.003f, 0.0f, 0.0f, 400.0f, 500.0f},
-    .yaw   = {0.25f, 0.10f, 0.001f, 0.0f, 0.0f, 400.0f, 500.0f} // Yaw usually needs more P
+    .roll  = {0.15f, 0.05f, 0.003f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
+    .pitch = {0.15f, 0.05f, 0.003f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
+    .yaw   = {0.25f, 0.10f, 0.001f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f} // Yaw usually needs more P
 };
 
 const float dt = 0.0006024f; // 1.66 kHz period
@@ -30,8 +30,11 @@ float PID_Compute(PID_Controller *pid, float target, float actual, float dt) {
 
     // 5. Combine and Constrain
     float output = p_term + pid->integral + d_term;
-    if (output > pid->max_output) output = pid->max_output;
-    else if (output < -pid->max_output) output = -pid->max_output;
+	if (output > pid->max_output)
+    	output = pid->max_output;
+
+    else if (output < -pid->max_output)
+    	output = -pid->max_output;
 
     return output;
 }

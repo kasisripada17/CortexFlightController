@@ -1,40 +1,86 @@
 /*
- * sensor_fusion.c
+ * motion_FX.c
  *
- *  Created on: 18-Apr-2026
+ *  Created on: 19-Apr-2026
  *      Author: kasiviswanadhsripada
  */
-#include "sensor_fusion.h"
-/**
- * @brief Removes gravity vector from raw accelerometer data to get linear acceleration.
- * @param raw_acc: The raw accelerometer values (X, Y, Z)
- * @param roll: Current drone roll in degrees
- * @param pitch: Current drone pitch in degrees
- * @return Vector3f: The linear acceleration (movement only)
- */
-Vector3f get_linear_acceleration(Vector3f raw_acc, float roll_deg, float pitch_deg) {
-    Vector3f linear_acc;
+#include "motion_fx.h"
+#include "stm32h7xx_hal.h"
+#include "lsm6ds3.h"
+#include "print.h"
+#define MFX_STR_LENG 35
+#define STATE_SIZE (uint8_t)(2450)
+#define ENABLE_6X 1
+char lib_version_mfx[MFX_STR_LENG];
+static uint8_t mfxstate[STATE_SIZE];
+MFX_knobs_t iKnobs;
+float LastTime;
+extern volatile IMU_Data_t sensor_data ;
+extern uint8_t buffer[256];
 
-    // 1. Convert degrees to radians
-    float roll_rad = roll_deg * DEG_TO_RAD;
-    float pitch_rad = pitch_deg * DEG_TO_RAD;
+void motionfx_init(void)
+{
+	/* Check if statically allocated memory size is sufficient
+	 to store MotionFX algorithm state and resize if necessary */
+	if (STATE_SIZE < MotionFX_GetStateSize())
+	{
+		  __disable_irq();
+		  while (1)
+		  {
+		  }
+	}
 
-    // 2. Pre-calculate trig values for efficiency
-    float cosRoll  = cosf(roll_rad);
-    float sinRoll  = sinf(roll_rad);
-    float cosPitch = cosf(pitch_rad);
-    float sinPitch = sinf(pitch_rad);
+	/* Sensor Fusion API initialization function */
+	MotionFX_initialize((MFXState_t *)mfxstate);
+	/* Optional: Get version */
+	MotionFX_GetLibVersion(lib_version_mfx);
+	/* Modify knobs settings & set the knobs */
+	MotionFX_getKnobs(mfxstate, &iKnobs);
 
-    // 3. Subtract gravity vector component from each axis
-    // Acc_linear_x = Acc_raw_x - sin(Pitch)
-    linear_acc.x = raw_acc.x - (sinPitch * G_VALUE);
-
-    // Acc_linear_y = Acc_raw_y - sin(Roll) * cos(Pitch)
-    linear_acc.y = raw_acc.y - (sinRoll * cosPitch * G_VALUE);
-
-    // Acc_linear_z = Acc_raw_z - cos(Roll) * cos(Pitch)
-    linear_acc.z = raw_acc.z - (cosRoll * cosPitch * G_VALUE);
-
-    return linear_acc;
+	MotionFX_setKnobs(mfxstate, &iKnobs);
+	MotionFX_enable_6X(mfxstate, MFX_ENGINE_DISABLE);
+	MotionFX_enable_9X(mfxstate, MFX_ENGINE_DISABLE);
+	/* Enable 9-axis sensor fusion */
+	if (ENABLE_6X == 1)
+	{
+	 MotionFX_enable_6X(mfxstate, MFX_ENGINE_ENABLE);
+	}
+	else
+	{
+	 MotionFX_enable_9X(mfxstate, MFX_ENGINE_ENABLE);
+	}
 }
 
+
+/* Using Sensor Fusion algorithm */
+void motion_fx_update(void)
+{
+ MFX_input_t data_in;
+ MFX_output_t data_out;
+ float  dT = 0.002403846f;
+
+
+ data_in.acc[0] = sensor_data.acc_x;
+ data_in.acc[1] = sensor_data.acc_y;
+ data_in.acc[2] = sensor_data.acc_z;
+
+ data_in.gyro[0] = sensor_data.gyro_cal_x;
+ data_in.gyro[1] = sensor_data.gyro_cal_y;
+ data_in.gyro[2] = sensor_data.gyro_cal_z;
+
+
+ /* Calculate elapsed time from last ac  */
+
+
+
+  /* Run Sensor Fusion algorithm */
+  MotionFX_propagate(mfxstate, &data_out, &data_in, &dT);
+  MotionFX_update(mfxstate, &data_out, &data_in, &dT, NULL);
+  if (ENABLE_6X == 1)
+  {
+  /* Game rotation Vector */
+		uint8_t size = sprintf((char*)buffer, "\r\n%f,%f,%f",data_out.rotation[0],data_out.rotation[1],data_out.rotation[2]);
+		usb_print(buffer,size);
+  }
+
+ }

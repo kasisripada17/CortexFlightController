@@ -1,6 +1,8 @@
 ../Core/Src/stm32h7xx_hal_msp.c:64:6:HAL_MspInit	1
-../Core/Src/stm32h7xx_hal_msp.c:86:6:HAL_SPI_MspInit	3
-../Core/Src/stm32h7xx_hal_msp.c:135:6:HAL_SPI_MspDeInit	2
-../Core/Src/stm32h7xx_hal_msp.c:165:6:HAL_TIM_Base_MspInit	3
-../Core/Src/stm32h7xx_hal_msp.c:211:6:HAL_TIM_MspPostInit	2
-../Core/Src/stm32h7xx_hal_msp.c:246:6:HAL_TIM_Base_MspDeInit	3
+../Core/Src/stm32h7xx_hal_msp.c:86:6:HAL_CRC_MspInit	2
+../Core/Src/stm32h7xx_hal_msp.c:109:6:HAL_CRC_MspDeInit	2
+../Core/Src/stm32h7xx_hal_msp.c:131:6:HAL_SPI_MspInit	3
+../Core/Src/stm32h7xx_hal_msp.c:180:6:HAL_SPI_MspDeInit	2
+../Core/Src/stm32h7xx_hal_msp.c:210:6:HAL_TIM_Base_MspInit	3
+../Core/Src/stm32h7xx_hal_msp.c:256:6:HAL_TIM_MspPostInit	2
+../Core/Src/stm32h7xx_hal_msp.c:291:6:HAL_TIM_Base_MspDeInit	3

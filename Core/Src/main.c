@@ -17,6 +17,7 @@
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
+#include <gyro_calibration.h>
 #include "main.h"
 #include "usb_device.h"
 
@@ -54,7 +55,10 @@ extern receiver_t radio;
 
 /* Private variables ---------------------------------------------------------*/
 
+CRC_HandleTypeDef hcrc;
+
 SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 
@@ -70,11 +74,20 @@ static void MX_GPIO_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
-
+static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t USB_transmit_buffer[256];
 uint16_t transmit_size = 0;
 uint8_t esc_calibration;
+#define MFX_STATE_SIZE 2432 // Check documentation for your specific version
+#define MGC_STATE_SIZE 2432 // Check documentation for your specific version
+#define MAC_STATE_SIZE 2432 // Check documentation for your specific version
+
+uint8_t mfx_state[MFX_STATE_SIZE] __attribute__((section(".dtcmram")));
+uint8_t mgc_state[MGC_STATE_SIZE] __attribute__((section(".dtcmram")));
+uint8_t mac_state[MAC_STATE_SIZE] __attribute__((section(".dtcmram")));
+
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -112,16 +125,18 @@ int main(void)
   PeriphCommonClock_Config();
 
   /* USER CODE BEGIN SysInit */
+ 
 
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
+
   MX_GPIO_Init();
   MX_SPI1_Init();
   MX_TIM1_Init();
   MX_TIM2_Init();
-  HAL_TIM_Base_MspInit(&htim2);
   MX_USB_DEVICE_Init();
+  MX_CRC_Init();
   /* USER CODE BEGIN 2 */
   /* Start Input Capture for all 4 channels on TIM1 */
 
@@ -142,7 +157,9 @@ int main(void)
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
 
 	update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
+	/* Disable Caches for debugging library linking */
 
+	gyro_calibration_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -150,26 +167,10 @@ int main(void)
   while (1)
   {
 
-//		static uint32_t prev_time = 0;
-//		if (HAL_GetTick() - prev_time > 100) {
-//			prev_time = HAL_GetTick();
-//			uint8_t buffer[256];
-//			uint16_t size;
-//			size = sprintf(buffer, "T=%f, R=%f, P=%f, Y=%f\r\n", radio.throttle,
-//					radio.roll, radio.pitch, radio.yaw);
-//			usb_print(buffer, size);
-//			//update_motors((uint32_t)radio.throttle,(uint32_t)radio.throttle,(uint32_t)radio.throttle,(uint32_t)radio.throttle);
-//
-//		}
-//
-
-
 		if (esc_calibration) {
 			update_motors((uint32_t) radio.throttle, (uint32_t) radio.throttle,
 					(uint32_t) radio.throttle, (uint32_t) radio.throttle);
-
 		}
-
 
     /* USER CODE END WHILE */
 
@@ -256,6 +257,37 @@ void PeriphCommonClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief CRC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CRC_Init(void)
+{
+
+  /* USER CODE BEGIN CRC_Init 0 */
+
+  /* USER CODE END CRC_Init 0 */
+
+  /* USER CODE BEGIN CRC_Init 1 */
+
+  /* USER CODE END CRC_Init 1 */
+  hcrc.Instance = CRC;
+  hcrc.Init.DefaultPolynomialUse = DEFAULT_POLYNOMIAL_ENABLE;
+  hcrc.Init.DefaultInitValueUse = DEFAULT_INIT_VALUE_ENABLE;
+  hcrc.Init.InputDataInversionMode = CRC_INPUTDATA_INVERSION_NONE;
+  hcrc.Init.OutputDataInversionMode = CRC_OUTPUTDATA_INVERSION_DISABLE;
+  hcrc.InputDataFormat = CRC_INPUTDATA_FORMAT_BYTES;
+  if (HAL_CRC_Init(&hcrc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CRC_Init 2 */
+
+  /* USER CODE END CRC_Init 2 */
+
 }
 
 /**
@@ -449,7 +481,6 @@ static void MX_TIM2_Init(void)
 
 }
 
-
 /**
   * @brief GPIO Initialization Function
   * @param None
@@ -466,6 +497,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
@@ -490,14 +522,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(int_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PB0 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
-
-
 
 
 

@@ -19,13 +19,10 @@
 #define ACC_MAX_SAMPLES 2000
 
 typedef struct {
-    int16_t raw_gyrox, raw_gyroy, raw_gyroz;
     float gyro_x, gyro_y, gyro_z;
-
-    int16_t raw_accx, raw_accy, raw_accz;
-    float  acc_x, acc_y, acc_z;
-
-
+    float gyro_cal_x, gyro_cal_y, gyro_cal_z;
+    float acc_x, acc_y, acc_z;
+    float acc_cal_x, acc_cal_y, acc_cal_z;
 } IMU_Data_t;
 
 typedef struct {

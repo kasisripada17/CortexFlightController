@@ -5,5 +5,5 @@
 
 USER_OBJS :=
 
-LIBS :=
+LIBS := -l:MotionGC_CM7F_wc32_ot_hard.a -l:MotionFX_CM7F_wc32_ot_hard.a -l:MotionAC_CM7F_wc32_ot_hard.a
 

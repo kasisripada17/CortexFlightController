@@ -1,1 +1,2 @@
-../Core/Src/sensor_fusion.c:15:10:get_linear_acceleration	1
+../Core/Src/sensor_fusion.c:21:6:motionfx_init	2
+../Core/Src/sensor_fusion.c:56:6:motion_fx_update	1

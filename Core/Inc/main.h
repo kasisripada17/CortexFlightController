@@ -36,6 +36,7 @@ extern "C" {
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+void sensor_fusion(float accel_raw[3], float gyro_raw[3], float delta_time) ;
 
 /* USER CODE END ET */
 

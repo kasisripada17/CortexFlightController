@@ -65,7 +65,7 @@ main-build: STM32H7_QUADCOPTER.elf secondary-outputs
 
 # Tool invocations
 STM32H7_QUADCOPTER.elf STM32H7_QUADCOPTER.map: $(OBJS) $(USER_OBJS) /Users/kasiviswanadhsripada/Documents/cube_projects/drone/STM32H7_QUADCOPTER/STM32H723ZGTX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "STM32H7_QUADCOPTER.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m7 -T"/Users/kasiviswanadhsripada/Documents/cube_projects/drone/STM32H7_QUADCOPTER/STM32H723ZGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="STM32H7_QUADCOPTER.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+	arm-none-eabi-gcc -o "STM32H7_QUADCOPTER.elf" @"objects.list" $(USER_OBJS) -Wl,--start-group $(LIBS) -Wl,--end-group -mcpu=cortex-m7 -T"/Users/kasiviswanadhsripada/Documents/cube_projects/drone/STM32H7_QUADCOPTER/STM32H723ZGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="STM32H7_QUADCOPTER.map" -Wl,--gc-sections -static -L../Middlewares/ST/STM32_MotionGC_Library/Lib -L../Middlewares/ST/STM32_MotionFX_Library/Lib -L../Middlewares/ST/STM32_MotionAC_Library/Lib -u _printf_float --specs=nano.specs -mfpu=fpv5-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

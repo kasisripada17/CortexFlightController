@@ -1,1 +1,2 @@
-../Core/Src/pid_control.c:14:7:PID_Compute	5
+../Core/Src/pid_control.c:18:7:PID_Compute	5
+../Core/Src/pid_control.c:46:6:PID_Reset	1

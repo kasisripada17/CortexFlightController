@@ -3,10 +3,14 @@
 
 
 Flight_Control_t fc = {
-    // Axis:  {Kp,    Ki,    Kd,    integ, last_in, i_limit, out_limit}
+    // Inner Rate Loops (The "Muscle")
     .roll  = {0.15f, 0.05f, 0.003f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
     .pitch = {0.15f, 0.05f, 0.003f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
-    .yaw   = {0.25f, 0.10f, 0.001f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f} // Yaw usually needs more P
+    .yaw   = {0.25f, 0.10f, 0.001f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
+
+    // Outer Angle Loops (The "Brain" for Leveling)
+    .roll_angle_p  = 4.5f,
+    .pitch_angle_p = 4.5f
 };
 
 const float dt = 0.0006024f; // 1.66 kHz period
@@ -37,6 +41,12 @@ float PID_Compute(PID_Controller *pid, float target, float actual, float dt) {
     	output = -pid->max_output;
 
     return output;
+}
+
+void PID_Reset(PID_Controller *pid) {
+    pid->integral = 0.0f;
+    pid->last_error = 0.0f;
+    pid->last_input = 0.0f; // Resetting this prevents a "D-term kick" on the first loop
 }
 
 

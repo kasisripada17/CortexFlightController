@@ -9,7 +9,7 @@
 #include "lsm6ds3.h"
 #include "print.h"
 #define MFX_STR_LENG 35
-#define STATE_SIZE (uint8_t)(2450)
+#define STATE_SIZE (uint32_t)(2450)
 #define ENABLE_6X 1
 char lib_version_mfx[MFX_STR_LENG];
 static uint8_t mfxstate[STATE_SIZE];
@@ -36,7 +36,15 @@ void motionfx_init(void)
 	MotionFX_GetLibVersion(lib_version_mfx);
 	/* Modify knobs settings & set the knobs */
 	MotionFX_getKnobs(mfxstate, &iKnobs);
+	// 2. Adjust for a Drone (High vibration environment)
+	iKnobs.ATime = 5.0f;        // Increase this if the horizon "shakes" during flight
+	iKnobs.MTime = 2.0f;        // Snap to heading quickly
+	iKnobs.LMode = 2;           // High-dynamic mode for aircraft
+	iKnobs.modx = 1;            // Enable Gyro Bias estimation within the EKF
 
+	// 3. Set the coordinate system
+	// Most flight controllers use NED (North East Down)
+	iKnobs.output_type = MFX_ENGINE_OUTPUT_NED;
 	MotionFX_setKnobs(mfxstate, &iKnobs);
 	MotionFX_enable_6X(mfxstate, MFX_ENGINE_DISABLE);
 	MotionFX_enable_9X(mfxstate, MFX_ENGINE_DISABLE);
@@ -76,11 +84,16 @@ void motion_fx_update(void)
   /* Run Sensor Fusion algorithm */
   MotionFX_propagate(mfxstate, &data_out, &data_in, &dT);
   MotionFX_update(mfxstate, &data_out, &data_in, &dT, NULL);
+  sensor_data.roll = data_out.rotation[2];
+  sensor_data.pitch = data_out.rotation[1];
+  sensor_data.yaw = data_out.rotation[0];
+
+
   if (ENABLE_6X == 1)
   {
   /* Game rotation Vector */
-		uint8_t size = sprintf((char*)buffer, "\r\n%f,%f,%f",data_out.rotation[0],data_out.rotation[1],data_out.rotation[2]);
-		usb_print(buffer,size);
+//		uint8_t size = sprintf((char*)buffer, "\r\n%f,%f,%f",data_out.rotation[0],data_out.rotation[1],data_out.rotation[2]);
+//		usb_print(buffer,size);
   }
 
  }

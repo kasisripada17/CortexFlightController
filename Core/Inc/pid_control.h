@@ -25,14 +25,18 @@ typedef struct {
     float max_output;
 } PID_Controller;
 
-// Container for all 3 axes
 typedef struct {
-	PID_Controller roll;
-	PID_Controller pitch;
-	PID_Controller yaw;
+    PID_Controller roll;
+    PID_Controller pitch;
+    PID_Controller yaw;
+
+    // Outer Angle Loop Gains
+    float roll_angle_p;
+    float pitch_angle_p;
 } Flight_Control_t;
 
 float PID_Compute(PID_Controller *pid, float target, float actual, float dt) ;
+void PID_Reset(PID_Controller *pid) ;
 
 
 #endif /* INC_PID_CONTROL_H_ */

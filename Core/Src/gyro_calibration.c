@@ -40,8 +40,8 @@ void gyro_calibration_init(void) {
 	MotionGC_GetKnobs(&knobs);
 	/* Optional: Adjust knobs settings */
 	// Increase Acc threshold to 20mg (Standard is often 0.01 or 0.02)
-	knobs.AccThr = 0.1f;     // Increased from 0.05
-	knobs.GyroThr = 5.0f;    // Increased from 2.0
+	knobs.AccThr = 0.2f;     // Increased from 0.05
+	knobs.GyroThr = 10.0f;    // Increased from 2.0
 	// Ensure FastStart is enabled (yours is 1, which is good)
 	knobs.FastStart = 1;
 	MotionGC_SetKnobs(&knobs);
@@ -59,13 +59,14 @@ void gyro_calibration_routine() {
 	MGC_input_t data_in = {0};
 	static MGC_output_t data_out ={0};
 	int bias_update= 0;
+	data_in.Gyro[0] = sensor_data.gyro_x;
+	data_in.Gyro[1] = sensor_data.gyro_y;
+	data_in.Gyro[2] = sensor_data.gyro_z;
+	data_in.Acc[0] = sensor_data.acc_x;
+	data_in.Acc[1] = sensor_data.acc_y;
+	data_in.Acc[2] = sensor_data.acc_z;
 	if (flight_mode!=ARMED) {
-		data_in.Gyro[0] = sensor_data.gyro_x;
-		data_in.Gyro[1] = sensor_data.gyro_y;
-		data_in.Gyro[2] = sensor_data.gyro_z;
-		data_in.Acc[0] = sensor_data.acc_x;
-		data_in.Acc[1] = sensor_data.acc_y;
-		data_in.Acc[2] = sensor_data.acc_z;
+
 
 		/* Gyroscope calibration algorithm update */
 		MotionGC_Update(&data_in, &data_out, &bias_update);

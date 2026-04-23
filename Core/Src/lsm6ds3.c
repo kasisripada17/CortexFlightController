@@ -149,13 +149,13 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		sensor_data.gyro_z = ((float) (angz * 0.0175f));
 
 		// 1. Subtract offsets and scale to G's (+/- 8g scale)
-		sensor_data.acc_x = ((float) accx * 0.000244f);
-		sensor_data.acc_y = ((float) accy * 0.000244f);
+		sensor_data.acc_x = ((float) accy * 0.000244f);
+		sensor_data.acc_y = ((float) accx * 0.000244f);
 		sensor_data.acc_z = ((float) accz * 0.000244f);
 		gyro_calibration_routine();
 		 motion_fx_update();
 
-	//	flight_control();
+		 flight_control();
 
 	}
 

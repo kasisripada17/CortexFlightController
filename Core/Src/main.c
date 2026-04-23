@@ -31,12 +31,14 @@
 #include "print.h"
 #include "radio.h"
 #include "flight_control.h"
-
+#include "sensor_fusion.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 extern receiver_t radio;
+extern uint8_t buffer[256];
+extern uint16_t size;
 
 /* USER CODE END PTD */
 
@@ -160,8 +162,16 @@ int main(void)
 	/* Disable Caches for debugging library linking */
 
 	gyro_calibration_init();
+	motionfx_init();
   /* USER CODE END 2 */
-
+	update_motors(1200, 1000,1000,1000) ;
+	HAL_Delay(5000);
+	update_motors(1000, 1200,1000,1000) ;
+	HAL_Delay(5000);
+	update_motors(1000, 1000,1200,1000) ;
+	HAL_Delay(5000);
+	update_motors(1000, 1000,1000,1200) ;
+	HAL_Delay(5000);
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
@@ -172,6 +182,8 @@ int main(void)
 					(uint32_t) radio.throttle, (uint32_t) radio.throttle);
 		}
 
+//		size = sprintf(buffer,"\r\n%f,%f,%f,%f",radio.throttle,radio.roll,radio.pitch,radio.yaw);
+//		usb_print(buffer,size);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

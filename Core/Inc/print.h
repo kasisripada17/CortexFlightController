@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 #include "usbd_cdc_if.h"
-
+#include "usb_device.h"
 void usb_print(uint8_t *buffer, uint16_t size);
 
 

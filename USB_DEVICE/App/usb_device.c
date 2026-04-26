@@ -26,6 +26,8 @@
 #include "usbd_cdc.h"
 #include "usbd_cdc_if.h"
 
+extern uint8_t UserRxBufferHS[APP_RX_DATA_SIZE];
+
 /* USER CODE BEGIN Includes */
 
 /* USER CODE END Includes */
@@ -84,9 +86,10 @@ void MX_USB_DEVICE_Init(void)
   {
     Error_Handler();
   }
-
+  USBD_CDC_SetRxBuffer(&hUsbDeviceHS, UserRxBufferHS);
+  USBD_CDC_ReceivePacket(&hUsbDeviceHS);
   /* USER CODE BEGIN USB_DEVICE_Init_PostTreatment */
-  HAL_PWREx_EnableUSBVoltageDetector();
+ HAL_PWREx_EnableUSBVoltageDetector();
 
   /* USER CODE END USB_DEVICE_Init_PostTreatment */
 }

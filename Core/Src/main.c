@@ -32,6 +32,8 @@
 #include "radio.h"
 #include "flight_control.h"
 #include "sensor_fusion.h"
+#include <stdbool.h>
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -88,6 +90,7 @@ uint8_t esc_calibration;
 uint8_t mfx_state[MFX_STATE_SIZE] __attribute__((section(".dtcmram")));
 uint8_t mgc_state[MGC_STATE_SIZE] __attribute__((section(".dtcmram")));
 uint8_t mac_state[MAC_STATE_SIZE] __attribute__((section(".dtcmram")));
+extern bool motor_test;
 
 
 /* USER CODE END PFP */
@@ -134,6 +137,8 @@ int main(void)
   /* Initialize all configured peripherals */
 
   MX_GPIO_Init();
+
+
   MX_SPI1_Init();
   MX_TIM1_Init();
   MX_TIM2_Init();
@@ -157,6 +162,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
+  /* Start the first receive manually to kickstart the interrupt chain */
 
 	update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
 	/* Disable Caches for debugging library linking */
@@ -164,14 +170,7 @@ int main(void)
 	gyro_calibration_init();
 	motionfx_init();
   /* USER CODE END 2 */
-	update_motors(1200, 1000,1000,1000) ;
-	HAL_Delay(5000);
-	update_motors(1000, 1200,1000,1000) ;
-	HAL_Delay(5000);
-	update_motors(1000, 1000,1200,1000) ;
-	HAL_Delay(5000);
-	update_motors(1000, 1000,1000,1200) ;
-	HAL_Delay(5000);
+
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
@@ -181,7 +180,20 @@ int main(void)
 			update_motors((uint32_t) radio.throttle, (uint32_t) radio.throttle,
 					(uint32_t) radio.throttle, (uint32_t) radio.throttle);
 		}
-
+//		if(motor_test == true)
+//		{
+//			update_motors(1100, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
+//			HAL_Delay(1000);
+//			update_motors(MOTOR_OFF, 1100, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
+//			HAL_Delay(1000);
+//			update_motors(MOTOR_OFF, MOTOR_OFF, 1100, MOTOR_OFF); // Send stop pulse
+//			HAL_Delay(1000);
+//			update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, 1100); // Send stop pulse
+//			HAL_Delay(1000);
+//
+//			update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
+//
+//		}
 //		size = sprintf(buffer,"\r\n%f,%f,%f,%f",radio.throttle,radio.roll,radio.pitch,radio.yaw);
 //		usb_print(buffer,size);
     /* USER CODE END WHILE */
@@ -525,7 +537,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP; // Must be Alternate Function Push-Pull
   GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
 
 
   /*Configure GPIO pin : int_Pin */

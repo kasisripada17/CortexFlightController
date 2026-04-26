@@ -36,7 +36,7 @@ typedef struct {
 } Flight_Control_t;
 
 float PID_Compute(PID_Controller *pid, float target, float actual, float dt) ;
-void PID_Reset(PID_Controller *pid) ;
+void PID_Reset(PID_Controller *pid, float current_sensor_value) ;
 
 
 #endif /* INC_PID_CONTROL_H_ */

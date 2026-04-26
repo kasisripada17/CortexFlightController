@@ -13,7 +13,7 @@
 #include "print.h"
 uint8_t buffer[256];
 uint16_t size;
-bool is_angle_mode = true;
+bool is_angle_mode = false;
 arm_state_t flight_mode = DISARMED;
 extern receiver_t radio;
 extern Flight_Control_t fc;
@@ -21,6 +21,8 @@ extern volatile IMU_Data_t sensor_data;
 extern uint8_t esc_calibration;
 bool start_gyro_calibration = false;
 extern Sensor_Calibration gyro_calibration;
+bool motor_test = false;
+#define PID_DT (1.0f / 416.0f)
 
 void update_arm_status() {
 	static uint32_t stick_hold_start = 0;
@@ -35,7 +37,7 @@ void update_arm_status() {
 	bool sticks_in_esc_calib_position = (radio.throttle < 1100
 			&& radio.yaw < 1100 && radio.pitch > 1900 && radio.roll > 1400
 			&& radio.roll < 1600);
-	bool sticks_in_gyro_force_calib = (radio.throttle > 1900 && radio.yaw < 1100
+	bool motor_test_pos = (radio.throttle > 1900 && radio.yaw < 1100
 			&& radio.pitch > 1900 && (radio.roll > 1400 && radio.roll < 1600));
 	switch (flight_mode) {
 
@@ -52,16 +54,14 @@ case DISARMED:
 		flight_mode = ESC_CALIBRATION;
 
 		usb_print((uint8_t*)"ESC_CALIBRATION_INIT\r\n", strlen("ESC_CALIBRATION_INIT\r\n"));
-	} else if (sticks_in_gyro_force_calib == 1) {
-		flight_mode = GYRO_CALIBRATION;
-		start_gyro_calibration = true;
+	} else if (motor_test_pos == 1) {
+		flight_mode = MOTOR_TEST;
 
 	}
 	break;
-case GYRO_CALIBRATION:
-	if (gyro_calibration == CALIBRATED) {
-		flight_mode = DISARMED;
-	}
+case MOTOR_TEST:
+	motor_test = true;
+	flight_mode = DISARMED;
 	break;
 
 case ESC_CALIBRATION:
@@ -130,10 +130,16 @@ void Mix_Motors(float r_cmd, float p_cmd, float y_cmd) {
 	// FINAL Mixer for Mapping: 0:FR, 1:FL, 2:RL, 3:RR
 	// This version flips the pitch signs from your previous attempt.
 
-	m[0] = radio.throttle + p_cmd - r_cmd - y_cmd; // Front Right
-	m[1] = radio.throttle + p_cmd + r_cmd + y_cmd; // Front Left
-	m[2] = radio.throttle - p_cmd + r_cmd - y_cmd; // Rear Left
-	m[3] = radio.throttle - p_cmd - r_cmd + y_cmd; // Rear Right
+
+
+
+	m[0] = radio.throttle - p_cmd - r_cmd - y_cmd; // Front Right (CCW)
+	m[1] = radio.throttle - p_cmd + r_cmd + y_cmd; // Front Left (CW)
+	m[2] = radio.throttle + p_cmd + r_cmd - y_cmd; // Rear Left (CCW)
+	m[3] = radio.throttle + p_cmd - r_cmd + y_cmd; // Rear Right (CW)
+
+
+
 
 	for (int i = 0; i < 4; i++) {
 		if (m[i] < MOTOR_MIN) {
@@ -148,22 +154,23 @@ void Mix_Motors(float r_cmd, float p_cmd, float y_cmd) {
 
 }
 // Define your max tilt for Angle Mode (e.g., 35 degrees)
-#define MAX_TILT_ANGLE 35.0f
+#define MAX_TILT_ANGLE 20.0f
 #define MAX_RATE_ACRO  250.0f
 
 void flight_control(void) {
 
     update_arm_status();
-    const float dt = 0.0006024f; // 1.66 kHz period
+    const float dt = PID_DT; // 416 hz
 
     if (flight_mode == ARMED) {
-        float target_roll_rate, target_pitch_rate;
+
+        float target_roll_rate = 0.0f, target_pitch_rate=0.0f;
 
         // 1. Determine Rate Setpoints based on Mode
         if (is_angle_mode) {
             // OUTER LOOP: Convert stick position to Target Angle
-            float target_roll_angle  = normalize_radio(radio.roll)  * MAX_RATE_ACRO;
-            float target_pitch_angle = normalize_radio(radio.pitch) * MAX_RATE_ACRO;
+            float target_roll_angle  = normalize_radio(radio.roll)  * MAX_TILT_ANGLE;
+            float target_pitch_angle = -normalize_radio(radio.pitch) * MAX_TILT_ANGLE;
 
             // Calculate Target Rate = P_angle * (Angle_Error)
             // Note: sensor_data.angle_x/y must come from your MotionFX/Kalman fusion
@@ -173,11 +180,11 @@ void flight_control(void) {
         else {
             // ACRO MODE: Sticks directly control rotation rate
             target_roll_rate  = normalize_radio(radio.roll)  * MAX_RATE_ACRO;
-            target_pitch_rate = normalize_radio(radio.pitch) * MAX_RATE_ACRO;
+            target_pitch_rate = -normalize_radio(radio.pitch) * MAX_RATE_ACRO;
         }
 
         // Yaw usually stays in Rate mode even in Angle mode
-        float target_yaw_rate = normalize_radio(radio.yaw) * 300.0f;
+        float target_yaw_rate = -normalize_radio(radio.yaw) * 300.0f;
 
         // 2. INNER LOOP: Compute Rate PID outputs
         // This math is the same regardless of how the target_rate was calculated
@@ -185,15 +192,22 @@ void flight_control(void) {
         float pitch_cmd = PID_Compute(&fc.pitch, target_pitch_rate, sensor_data.gyro_cal_y, dt);
         float yaw_cmd   = PID_Compute(&fc.yaw,   target_yaw_rate,   sensor_data.gyro_cal_z, dt);
 
+
+//
+//        size = sprintf((char*)buffer,"\r\n%f,%f,%f,%f,%f,%f",target_roll_rate, target_pitch_rate,target_yaw_rate,roll_cmd,pitch_cmd, yaw_cmd);
+//        usb_print(buffer,size);
         // 3. Final Mixing (Only called ONCE)
         Mix_Motors(roll_cmd, pitch_cmd, yaw_cmd);
 
     } else {
-        update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF);
+    	if(motor_test == false)
+    	{
+          update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF);
+    	}
         // Important: Reset PID integrals when disarmed to prevent "windup" on ground
-        PID_Reset(&fc.roll);
-        PID_Reset(&fc.pitch);
-        PID_Reset(&fc.yaw);
+        PID_Reset(&fc.roll,sensor_data.gyro_cal_x);
+        PID_Reset(&fc.pitch,sensor_data.gyro_cal_y);
+        PID_Reset(&fc.yaw,sensor_data.gyro_cal_z);
         return;
     }
 }

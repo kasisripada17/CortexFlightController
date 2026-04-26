@@ -22,6 +22,7 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
+extern void Comms_ProcessIncoming(uint8_t* Buf, uint32_t Len);
 
 /* USER CODE END INCLUDE */
 
@@ -89,8 +90,7 @@
 /* Create buffer for reception and transmission           */
 /* It's up to user to redefine and/or remove those define */
 /** Received data over USB are stored in this buffer      */
-uint8_t UserRxBufferHS[APP_RX_DATA_SIZE];
-
+uint8_t UserRxBufferHS[APP_RX_DATA_SIZE] __attribute__((section(".RAM_D1")));
 /** Data to send over USB CDC are stored in this buffer   */
 uint8_t UserTxBufferHS[APP_TX_DATA_SIZE];
 
@@ -264,7 +264,10 @@ static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 11 */
+	  Comms_ProcessIncoming(Buf, *Len);
+
   USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
+
   USBD_CDC_ReceivePacket(&hUsbDeviceHS);
   return (USBD_OK);
   /* USER CODE END 11 */

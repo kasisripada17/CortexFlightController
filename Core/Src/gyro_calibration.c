@@ -26,7 +26,7 @@ volatile uint8_t acc_calib_counter;
 extern arm_state_t flight_mode;
 extern volatile IMU_Data_t sensor_data;
 extern uint8_t buffer[256];
-
+extern uint16_t size;
 void gyro_calibration_init(void) {
 	sample_freq = SAMPLE_FREQUENCY;
 	MotionGC_Initialize(MGC_MCU_STM32, &sample_freq);
@@ -40,15 +40,15 @@ void gyro_calibration_init(void) {
 	MotionGC_GetKnobs(&knobs);
 	/* Optional: Adjust knobs settings */
 	// Increase Acc threshold to 20mg (Standard is often 0.01 or 0.02)
-	knobs.AccThr = 0.2f;     // Increased from 0.05
-	knobs.GyroThr = 10.0f;    // Increased from 2.0
+//	knobs.AccThr = 0.2f;     // Increased from 0.05
+//	knobs.GyroThr = 10.0f;    // Increased from 2.0
 	// Ensure FastStart is enabled (yours is 1, which is good)
 	knobs.FastStart = 1;
 	MotionGC_SetKnobs(&knobs);
 	/* Optional: Set initial gyroscope offset */
-	start_gyro_bias.GyroBiasX = 0;
-	start_gyro_bias.GyroBiasY = 0;
-	start_gyro_bias.GyroBiasZ = 0;
+	start_gyro_bias.GyroBiasX = 2.08f;
+	start_gyro_bias.GyroBiasY = -7.01f;
+	start_gyro_bias.GyroBiasZ = -0.56f;
 	MotionGC_SetCalParams(&start_gyro_bias);
 	/* Optional: Set sample frequency */
 	MotionGC_SetFrequency(&sample_freq);
@@ -75,7 +75,9 @@ void gyro_calibration_routine() {
 		sensor_data.gyro_cal_x = (data_in.Gyro[0] - data_out.GyroBiasX);
 		sensor_data.gyro_cal_y = (data_in.Gyro[1] - data_out.GyroBiasY);
 		sensor_data.gyro_cal_z = (data_in.Gyro[2] - data_out.GyroBiasZ);
-
+//size  = sprintf(buffer,"\r\n%f,%f,%f",
+//		sensor_data.gyro_cal_x,sensor_data.gyro_cal_y,sensor_data.gyro_cal_z);
+//usb_print(buffer, size);
 
 }
 

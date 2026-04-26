@@ -21,7 +21,7 @@ typedef enum {
     ARMED,
     DISARMING,
 	ESC_CALIBRATION,
-	GYRO_CALIBRATION
+	MOTOR_TEST
 } arm_state_t;
 
 #endif /* INC_FLIGHT_CONTROL_H_ */

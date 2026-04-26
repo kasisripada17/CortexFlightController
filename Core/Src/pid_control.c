@@ -4,16 +4,15 @@
 
 Flight_Control_t fc = {
     // Inner Rate Loops (The "Muscle")
-    .roll  = {0.15f, 0.05f, 0.003f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
-    .pitch = {0.15f, 0.05f, 0.003f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
-    .yaw   = {0.25f, 0.10f, 0.001f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
-
+		// Pitch needs more 'punch' (Kp) and 'brakes' (Kd) than Roll
+		.roll  = {2.0f, 1.0f, 0.015f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
+		.pitch = {2.0f, 1.0f, 0.015f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
+		.yaw   = {4.00f, 2.00f, 0.000f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
     // Outer Angle Loops (The "Brain" for Leveling)
-    .roll_angle_p  = 4.5f,
-    .pitch_angle_p = 4.5f
+    .roll_angle_p  = 2.0f,
+    .pitch_angle_p = 2.0f
 };
 
-const float dt = 0.0006024f; // 1.66 kHz period
 
 float PID_Compute(PID_Controller *pid, float target, float actual, float dt) {
     // 1. Error calculation
@@ -43,10 +42,11 @@ float PID_Compute(PID_Controller *pid, float target, float actual, float dt) {
     return output;
 }
 
-void PID_Reset(PID_Controller *pid) {
+void PID_Reset(PID_Controller *pid, float current_sensor_value) {
     pid->integral = 0.0f;
     pid->last_error = 0.0f;
-    pid->last_input = 0.0f; // Resetting this prevents a "D-term kick" on the first loop
+    // Prime the derivative state to match reality
+    pid->last_input = current_sensor_value;
+
+
 }
-
-

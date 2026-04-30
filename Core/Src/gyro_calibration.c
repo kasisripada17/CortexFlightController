@@ -21,8 +21,7 @@ char lib_version[VERSION_STR_LENG];
 MGC_knobs_t knobs;
 MGC_output_t start_gyro_bias;
 float sample_freq;
-volatile uint8_t gyro_calib_counter = 0;
-volatile uint8_t acc_calib_counter;
+
 extern arm_state_t flight_mode;
 extern volatile IMU_Data_t sensor_data;
 extern uint8_t buffer[256];
@@ -56,29 +55,27 @@ void gyro_calibration_init(void) {
 
 /* Using gyroscope calibration algorithm */
 void gyro_calibration_routine() {
-	MGC_input_t data_in = {0};
-	static MGC_output_t data_out ={0};
-	int bias_update= 0;
+	MGC_input_t data_in = { 0 };
+	static MGC_output_t data_out = { 0 };
+	int bias_update = 0;
 	data_in.Gyro[0] = sensor_data.gyro_x;
 	data_in.Gyro[1] = sensor_data.gyro_y;
 	data_in.Gyro[2] = sensor_data.gyro_z;
 	data_in.Acc[0] = sensor_data.acc_x;
 	data_in.Acc[1] = sensor_data.acc_y;
 	data_in.Acc[2] = sensor_data.acc_z;
-	if (flight_mode!=ARMED) {
-
+	if (flight_mode != ARMED) {
 
 		/* Gyroscope calibration algorithm update */
 		MotionGC_Update(&data_in, &data_out, &bias_update);
 	}
-		/* Apply correction */
-		sensor_data.gyro_cal_x = (data_in.Gyro[0] - data_out.GyroBiasX);
-		sensor_data.gyro_cal_y = (data_in.Gyro[1] - data_out.GyroBiasY);
-		sensor_data.gyro_cal_z = (data_in.Gyro[2] - data_out.GyroBiasZ);
+	/* Apply correction */
+	sensor_data.gyro_cal_x = (data_in.Gyro[0] - data_out.GyroBiasX);
+	sensor_data.gyro_cal_y = (data_in.Gyro[1] - data_out.GyroBiasY);
+	sensor_data.gyro_cal_z = (data_in.Gyro[2] - data_out.GyroBiasZ);
 //size  = sprintf(buffer,"\r\n%f,%f,%f",
 //		sensor_data.gyro_cal_x,sensor_data.gyro_cal_y,sensor_data.gyro_cal_z);
 //usb_print(buffer, size);
 
 }
-
 

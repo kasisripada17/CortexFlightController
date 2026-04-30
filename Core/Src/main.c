@@ -41,6 +41,7 @@
 extern receiver_t radio;
 extern uint8_t buffer[256];
 extern uint16_t size;
+extern volatile IMU_Data_t sensor_data;
 
 /* USER CODE END PTD */
 
@@ -82,7 +83,7 @@ static void MX_CRC_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t USB_transmit_buffer[256];
 uint16_t transmit_size = 0;
-uint8_t esc_calibration;
+volatile uint8_t esc_calibration;
 #define MFX_STATE_SIZE 2432 // Check documentation for your specific version
 #define MGC_STATE_SIZE 2432 // Check documentation for your specific version
 #define MAC_STATE_SIZE 2432 // Check documentation for your specific version
@@ -154,7 +155,7 @@ int main(void)
 
 
   // Enable the Interrupt Line 4 (PC4 uses EXTI4)
-  HAL_NVIC_SetPriority(EXTI4_IRQn, 1, 0);
+  HAL_NVIC_SetPriority(EXTI4_IRQn,2, 0);
   HAL_NVIC_EnableIRQ(EXTI4_IRQn);
   IMU_Init();
 
@@ -177,6 +178,8 @@ int main(void)
   {
 
 		if (esc_calibration) {
+			usb_print((uint8_t*)"ESC_CALIBRATION_STARETED\r\n", strlen("ESC_CALIBRATION_STARETED\r\n"));
+
 			update_motors((uint32_t) radio.throttle, (uint32_t) radio.throttle,
 					(uint32_t) radio.throttle, (uint32_t) radio.throttle);
 		}
@@ -196,6 +199,15 @@ int main(void)
 //		}
 //		size = sprintf(buffer,"\r\n%f,%f,%f,%f",radio.throttle,radio.roll,radio.pitch,radio.yaw);
 //		usb_print(buffer,size);
+//static uint32_t current, old;
+//current = HAL_GetTick();
+//if(current-old > 10)
+//{
+//	old = current;
+//		uint8_t size = sprintf((char*)buffer, "\r\n%f,%f,%f",
+//					sensor_data.gyro_cal_x,sensor_data.gyro_cal_y,sensor_data.gyro_cal_z);
+//					usb_print(buffer,size);
+//}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

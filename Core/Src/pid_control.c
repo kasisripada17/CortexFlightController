@@ -9,8 +9,8 @@ Flight_Control_t fc = {
 		.pitch = {2.0f, 1.0f, 0.015f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
 		.yaw   = {4.00f, 2.00f, 0.000f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
     // Outer Angle Loops (The "Brain" for Leveling)
-    .roll_angle_p  = 2.0f,
-    .pitch_angle_p = 2.0f
+    .roll_angle_p  = 9.0f,
+    .pitch_angle_p = 9.0f
 };
 
 

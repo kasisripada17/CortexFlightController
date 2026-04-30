@@ -18,6 +18,7 @@ void flight_control(void) ;
 typedef enum {
     DISARMED,
     ARMING,
+	ARMED_SAFE,
     ARMED,
     DISARMING,
 	ESC_CALIBRATION,

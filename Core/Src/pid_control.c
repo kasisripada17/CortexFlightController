@@ -5,12 +5,15 @@
 Flight_Control_t fc = {
     // Inner Rate Loops (The "Muscle")
 		// Pitch needs more 'punch' (Kp) and 'brakes' (Kd) than Roll
-		.roll  = {2.0f, 1.0f, 0.015f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
-		.pitch = {2.0f, 1.0f, 0.015f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
-		.yaw   = {4.00f, 2.00f, 0.000f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
+		.roll  = {1.6f, 0.4f, 0.004f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
+		.pitch = {1.6f, 0.4f, 0.004f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
+		.yaw   = {2.10f, 1.00f, 0.000f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
+		 .alt   = {25.0f, 0.02f, 8.0f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
     // Outer Angle Loops (The "Brain" for Leveling)
-    .roll_angle_p  = 9.0f,
-    .pitch_angle_p = 9.0f
+    .roll_angle_p  = 5.0f,
+    .pitch_angle_p = 5.0f,
+	.target_altitude = 0.0f,
+	.ground_offset = 0.0f
 };
 
 

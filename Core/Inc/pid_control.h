@@ -29,10 +29,14 @@ typedef struct {
     PID_Controller roll;
     PID_Controller pitch;
     PID_Controller yaw;
-
+    PID_Controller alt;      // <--- Added for Altitude Hold
     // Outer Angle Loop Gains
     float roll_angle_p;
     float pitch_angle_p;
+    // Altitude Management
+        float target_altitude;   // The "locked" height
+        float hover_throttle;    // The base throttle needed to stay level
+        float ground_offset ;
 } Flight_Control_t;
 
 float PID_Compute(PID_Controller *pid, float target, float actual, float dt) ;

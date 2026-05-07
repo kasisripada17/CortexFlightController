@@ -7,7 +7,7 @@
 
 #ifndef INC_FLIGHT_CONTROL_H_
 #define INC_FLIGHT_CONTROL_H_
-void flight_control(void) ;
+
 
 
 #define MOTOR_MIN 1100  // Minimum spin to keep props moving
@@ -25,4 +25,14 @@ typedef enum {
 	MOTOR_TEST
 } arm_state_t;
 
+typedef enum{
+	ACRO,
+	SELF_LEVEL,
+	ALTITUDE_HOLD
+}Flight_Mode_t;
+
+
+void flight_control(void) ;
+void get_flight_mode(void) ;
+float compute_altitude_hold_throttle(float dt) ;
 #endif /* INC_FLIGHT_CONTROL_H_ */

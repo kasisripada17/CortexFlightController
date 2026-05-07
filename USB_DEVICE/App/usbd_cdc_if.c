@@ -90,7 +90,8 @@ extern void Comms_ProcessIncoming(uint8_t* Buf, uint32_t Len);
 /* Create buffer for reception and transmission           */
 /* It's up to user to redefine and/or remove those define */
 /** Received data over USB are stored in this buffer      */
-uint8_t UserRxBufferHS[APP_RX_DATA_SIZE] __attribute__((section(".RAM_D1")));
+uint8_t UserRxBufferHS[APP_RX_DATA_SIZE];
+
 /** Data to send over USB CDC are stored in this buffer   */
 uint8_t UserTxBufferHS[APP_TX_DATA_SIZE];
 

@@ -15,6 +15,7 @@
 #include "flight_control.h"
 #include <stdbool.h>
 #include "sensor_fusion.h"
+#include "barometer.h"
 // variables
 extern SPI_HandleTypeDef hspi1;
 volatile IMU_Data_t sensor_data = { 0 };
@@ -22,15 +23,26 @@ volatile uint8_t imu_data_ready = 0;
 volatile uint8_t sensor_data_read = 0;
 extern uint32_t receiver[4];
 extern Flight_Control_t fc;
-extern receiver_t radio;
+extern volatile receiver_t radio;
 IMU_Config_t imu_offsets = { 0 };
 uint16_t sample_number = 0;
 Sensor_Calibration gyro_calibration = NOT_STARTED;
 uint32_t motor[4];
 extern bool start_gyro_calibration;
- volatile uint32_t gyro_calib_counter = 0;
- volatile uint32_t acc_calib_counter = 0;
+volatile uint32_t gyro_calib_counter = 0;
+volatile uint32_t acc_calib_counter = 0;
+extern TIM_HandleTypeDef htim2;
+extern uint8_t buffer[256];
+extern uint16_t size;
 
+BaroState_t currentBaroState = BARO_STATE_IDLE;
+uint32_t lastBaroTime = 0;
+// Raw data variables for the MS5611
+uint32_t D1 = 0; // Raw Pressure
+uint32_t D2 = 0; // Raw Temperature
+
+// Ensure the calibration array is also present
+extern uint16_t C[7];
 //functions
 
 void IMU_Write_Reg(uint8_t reg, uint8_t value) {
@@ -59,65 +71,55 @@ uint8_t IMU_Read_Reg(uint8_t reg_addr) {
 	return read_val;
 }
 uint8_t IMU_Init(void) {
-	uint8_t whoAmI = 0;
-
-	// 1. Check Communication
-	uint8_t reg = LSM6DS3_ADDR_WHO_AM_I | 0x80; // Read bit
-	HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(&hspi1, &reg, 1, 10);
-	HAL_SPI_Receive(&hspi1, &whoAmI, 1, 10);
-	HAL_GPIO_WritePin(CS_GPIO_Port, CS_Pin, GPIO_PIN_SET);
-
-	// 1. Verify Communication (Expects 0x69)
+	MS5611_Init();
 	if (IMU_Read_Reg(0x0F) != 0x69) {
-		while (1) {
-		}
 		return 0;
 	}
 
-	// 1. Reset the device to a known clean state
-	IMU_Write_Reg(0x12, 0x05); // SW_RESET=1, IF_INC=1
-	HAL_Delay(50);             // Increased delay to ensure full reboot
+	IMU_Write_Reg(0x12, 0x05);  // SW reset + IF_INC
+	HAL_Delay(50);
 
-	// 2. Configure Full Scale Ranges (8g and 500dps)
-	// Note: We leave ODR at 0 for now during configuration
-	IMU_Write_Reg(0x10, 0x0C); // 8g range
-	IMU_Write_Reg(0x11, 0x04); // 500dps range
+	IMU_Write_Reg(0x10, 0x0C);  // CTRL1_XL: ODR=0, ±8g
+	IMU_Write_Reg(0x11, 0x04);  // CTRL2_G:  ODR=0, ±500dps
+	IMU_Write_Reg(0x12, 0x44);  // CTRL3_C:  BDU + auto-increment
 
-	// 3. System & Interface Config
-	// BDU=1 prevents reading "split" data; IF_INC=1 allows burst reads
-	IMU_Write_Reg(0x12, 0x44);
+	// 1. TURN OFF ACCEL LPF
+	// CTRL8_XL (0x17): Bit 3 (LPF2_XL_EN) = 0, Bit 7 (Low pass on 6D) = 0
+	// Setting to 0x00 bypasses LPF2 and uses the widest available bandwidth.
+	IMU_Write_Reg(0x17, 0x00);
 
-	// 4. Hardware Filtering Setup (The "Anti-Vibration" Engine)
-	// Enable LPF2 for Accel and set BW to ODR/9 (~46Hz)
-	IMU_Write_Reg(0x17, 0x89);
+	// 2. TURN OFF GYRO LPF1
+	// CTRL4_C (0x13): Bit 1 (LPF1_SEL_G) = 0 (Bypass LPF1)
+	IMU_Write_Reg(0x13, 0x00);
 
-	// Enable LPF2 for Gyroscope
-	//IMU_Write_Reg(0x13, 0x02);
+	// 3. SET GYRO TO MAX BANDWIDTH
+	// CTRL6_C (0x15): FTYPE bits 2:0 = 000 (Widest LPF1 if enabled)
+	IMU_Write_Reg(0x15, 0x00);
 
-	// Set Gyro LPF2 to strongest filtering (FTYPE=11)
-	IMU_Write_Reg(0x15, 0x03);
+	// 4. TURN OFF GYRO LPF2
+	// CTRL7_G (0x16): Bit 7 (HP_EN_G) = 0, Bit 6:4 (HPM_G) = 0
+	// This turns off the second stage digital filter entirely.
+	IMU_Write_Reg(0x16, 0x00);
 
-	// 5. Final Step: Enable Data Flow by setting ODR to 416Hz
-	// Doing this last ensures the filter pipeline is ready as data starts flowing
-	IMU_Write_Reg(0x10, 0x6C); // 416Hz + 8g
-	IMU_Write_Reg(0x11, 0x64); // 416Hz + 500dps
+	IMU_Write_Reg(0x10, 0x6C);  // CTRL1_XL: 416Hz, ±8g
+	IMU_Write_Reg(0x11, 0x64);  // CTRL2_G:  416Hz, ±500dps
+	IMU_Write_Reg(0x0D, 0x02);  // INT1_CTRL: DRDY_G → INT1
 
-	// 6. Sync & Interrupts
-	IMU_Write_Reg(0x0D, 0x02); // Route Gyro Data Ready to INT1
-
-	// 7. CRITICAL: Settling Delay
-	// This prevents your arming logic from seeing "zeroed out" or
-	// unstable filtered data during the first few cycles.
-	HAL_Delay(100);
-
-	return 1; // Success
+	return 1;
 }
-
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+
 	if (GPIO_Pin == GPIO_PIN_4) { // PC4 triggered
 
-		// 1. Start SPI Burst Read (12 bytes)
+//		static uint32_t now = 0;
+//		static uint32_t prev = 0;
+//
+//		now = __HAL_TIM_GET_COUNTER(&htim2);
+//		size = sprintf(buffer, "\r\n%d", now - prev);
+//		usb_print(buffer, size);
+//		prev = now;
+
+// 1. Start SPI Burst Read (12 bytes)
 		// Address 0x22 (GyroX_L) | 0x80 (Read Bit)
 		uint8_t reg = 0x22 | 0x80;
 		uint8_t buffer[12];
@@ -152,31 +154,77 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		sensor_data.acc_y = ((float) (accy * 0.000244f));
 		sensor_data.acc_z = ((float) (accz * 0.000244f));
 
-
-
 		static float acc_bias[3];
 		static bool acc_calib_done = false;
+		static float prevx = 0, prevy = 0,prevz = 0;
+
 		if (!acc_calib_done) {
-		    if (acc_calib_counter < 1000) {
-		        acc_bias[0] += sensor_data.acc_x;
-		        acc_bias[1] += sensor_data.acc_y;
-		        acc_calib_counter++;
-		    }
-		    else {
-		        acc_bias[0] /= 1000.0f;
-		        acc_bias[1] /= 1000.0f;
-		        acc_calib_done = true;
-		    }
+			if (acc_calib_counter < 1000) {
+
+				if (fabsf(sensor_data.acc_x - prevx) > 0.1f
+						|| fabsf(sensor_data.acc_y - prevy) > 0.1f) {
+
+					acc_bias[0] = 0;
+					acc_bias[1] = 0;
+					acc_bias[2] = 0;
+
+					acc_calib_counter = 0;
+				} else {
+					acc_bias[0] += sensor_data.acc_x;
+					acc_bias[1] += sensor_data.acc_y;
+					acc_bias[2] += sensor_data.acc_z; // Accumulate Z
+					acc_calib_counter++;
+				}
+			} else {
+				acc_bias[0] /= 1000.0f;
+				acc_bias[1] /= 1000.0f;
+				acc_bias[2] = (acc_bias[2]/1000.0f)-1.0f;
+
+				acc_calib_done = true;
+			}
 		}
 		if (acc_calib_done) {
 			sensor_data.acc_x = ((float) (sensor_data.acc_x - acc_bias[0]));
 			sensor_data.acc_y = ((float) (sensor_data.acc_y - acc_bias[1]));
+			sensor_data.acc_z = ((float) (sensor_data.acc_z - acc_bias[2]));
+
 		}
+		prevx = sensor_data.acc_x;
+		prevy = sensor_data.acc_y;
+		prevz = sensor_data.acc_z;
+
 
 		gyro_calibration_routine();
 		motion_fx_update();
 
 		flight_control();
+
+
+		// 2. RUN BARO STATE MACHINE (Non-blocking)
+		    switch(currentBaroState) {
+		        case BARO_STATE_IDLE:
+		            MS5611_Start_Pressure_Conv(); // Send command, pull D15 HIGH
+		            lastBaroTime = HAL_GetTick();
+		            currentBaroState = BARO_STATE_WAIT_PRES;
+		            break;
+
+		        case BARO_STATE_WAIT_PRES:
+		            if(HAL_GetTick() - lastBaroTime >= 10) { // Check if 10ms passed
+		                D1 = MS5611_Read_ADC_Result();    // Pull D15 LOW, read, HIGH
+		                MS5611_Start_Temp_Conv();
+		                lastBaroTime = HAL_GetTick();
+		                currentBaroState = BARO_STATE_WAIT_TEMP;
+		            }
+		            break;
+
+		        case BARO_STATE_WAIT_TEMP:
+		            if(HAL_GetTick() - lastBaroTime >= 10) {
+		                D2 = MS5611_Read_ADC_Result();
+		                Calculate_Final_Altitude(D1, D2);
+		                currentBaroState = BARO_STATE_IDLE; // Start over
+		            }
+		            break;
+		    }
 
 	}
 

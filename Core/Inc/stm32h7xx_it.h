@@ -55,8 +55,13 @@ void SVC_Handler(void);
 void DebugMon_Handler(void);
 void PendSV_Handler(void);
 void SysTick_Handler(void);
+void EXTI0_IRQHandler(void);
+void EXTI4_IRQHandler(void);
+void DMA1_Stream0_IRQHandler(void);
 void TIM1_CC_IRQHandler(void);
+void UART4_IRQHandler(void);
 void OTG_HS_IRQHandler(void);
+void DMAMUX1_OVR_IRQHandler(void);
 /* USER CODE BEGIN EFP */
 
 /* USER CODE END EFP */

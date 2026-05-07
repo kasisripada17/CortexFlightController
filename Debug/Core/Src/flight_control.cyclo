@@ -1,3 +1,5 @@
-../Core/Src/flight_control.c:28:6:update_arm_status	44
-../Core/Src/flight_control.c:134:6:Mix_Motors	4
-../Core/Src/flight_control.c:161:6:flight_control	9
+../Core/Src/flight_control.c:56:6:update_arm_status	43
+../Core/Src/flight_control.c:136:6:Mix_Motors_Adjusted	4
+../Core/Src/flight_control.c:152:6:flight_control	12
+../Core/Src/flight_control.c:244:6:get_flight_mode	7
+../Core/Src/flight_control.c:254:7:compute_altitude_hold_throttle	4

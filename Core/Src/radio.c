@@ -2,6 +2,7 @@
 #include "radio.h"
 #include "print.h"
 #include "motors.h"
+#include "comms.h"
 uint32_t IC_Val1 = 0, IC_Val2 = 0;
 uint32_t Difference = 0;
 uint8_t Is_First_Captured[4] = {0,0,0,0};  // Flags for 4 channels
@@ -117,6 +118,9 @@ void Parse_SBUS() {
         radio.throttle =  pwm_channels[2];
         radio.yaw =  pwm_channels[3];
         radio.mode = pwm_channels[4];
+        radio.pid_channel_selector = pwm_channels[5];
+        radio.pid_tune_gain_selector = pwm_channels[6];
+        radio.pid_gain = pwm_channels[7];
 
     }
 }

@@ -22,10 +22,12 @@
 #define MAX_TILT_ANGLE 35
 uint8_t buffer[256];
 extern float relative_altitude;
+extern float  alt_fused;
+
 // Add these to your global variables or class members
 bool alt_hold_initialized = false;
 float locked_altitude = 0.0f;
-
+extern float a_global[3] ;
 uint16_t size;
 bool is_angle_mode = false;
 arm_state_t arm_status = DISARMED;
@@ -35,7 +37,6 @@ extern volatile IMU_Data_t sensor_data;
 extern volatile uint8_t esc_calibration;
 bool start_gyro_calibration = false;
 extern Sensor_Calibration gyro_calibration;
-extern float position_earth[3];
 extern float velocity_earth[3];
 bool motor_test = false;
 #define PID_DT (1.0f / 416.0f)
@@ -100,7 +101,6 @@ void update_arm_status() {
 				fc.pitch.integral = 0;
 				fc.yaw.integral = 0;
 
-				fc.ground_offset = relative_altitude;
 
 			}
 		} else {
@@ -163,7 +163,7 @@ void flight_control(void) {
 
 			if (!alt_hold_initialized) {
 				// LOCK THE HEIGHT: Capture current altitude as target
-				fc.target_altitude = relative_altitude;
+				fc.target_altitude = alt_fused ;
 
 				// RESET PID: Clear previous I-term to prevent a sudden jump
 				PID_Reset(&fc.alt, 0);
@@ -172,6 +172,7 @@ void flight_control(void) {
 			}
 
 			current_throttle = compute_altitude_hold_throttle(dt);
+
 			float target_roll_angle = normalize_radio(
 					radio.roll) * MAX_TILT_ANGLE;
 			float target_pitch_angle = -normalize_radio(
@@ -265,7 +266,7 @@ float compute_altitude_hold_throttle(float dt) {
 
 	// Compute PID adjustment based on altitude error
 	float adjustment = PID_Compute(&fc.alt, fc.target_altitude,
-			relative_altitude, dt);
+			alt_fused , dt);
 
 	float final_throttle = radio.throttle + adjustment;
 

@@ -1,2 +1,3 @@
-../Core/Src/comms.c:20:6:Comms_ProcessIncoming	8
-../Core/Src/comms.c:46:6:Comms_ApplyLogic	9
+../Core/Src/comms.c:38:6:Comms_ProcessIncoming	8
+../Core/Src/comms.c:64:6:Comms_ApplyLogic	9
+../Core/Src/comms.c:103:6:update_tuning_from_radio	16

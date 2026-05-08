@@ -15,6 +15,9 @@ typedef struct{
 	float throttle;
 	float yaw;
 	float mode;
+	float pid_channel_selector;
+	float pid_tune_gain_selector;
+	float pid_gain;
 } receiver_t;
 
 /* User constants for the 50cm aircraft */
@@ -31,4 +34,5 @@ float normalize_radio(uint16_t pwm_val) ;
 void Parse_SBUS() ;
 void Update_PWM_Targets() ;
 uint16_t Map_SBUS_to_PWM(uint16_t sbus_val) ;
+void update_tuning_from_radio(void) ;
 #endif /* INC_RADIO_H_ */

@@ -23,13 +23,10 @@ void integrate_global_position(float dt) ;
 /* --- Velocity Control Variables --- */
 float target_position[3] = {0.0f, 0.0f, 0.0f};
 float target_velocity[3] = {0.0f, 0.0f, 0.0f};
-/* --- DJI-Style Velocity Altitude Control --- */
-float target_climb_rate = 0.0f;
-float alt_i_term = 0.0f;
 
-// Gains for H7 at 416Hz
-float Kp_vel_z = 12.0f; // High P-gain for snappy "locked-in" feel
-float Ki_vel_z = 0.8f;  // Integral to maintain hover against weight
+static float fused_alt = 0.0f;
+static float fused_vel = 0.0f;
+float a_global[3] = {0.0f,0.0f,0.0f};
 
 #define HOVER_THROTTLE 1500
 #define STICK_DEADZONE 0.1f
@@ -200,7 +197,6 @@ float angx = 0.0f,angy = 0.0f,angz = 0.0f;
 
 	convert_local_to_globalframe(&data_out,  dT) ;
 
-	integrate_global_position(dT) ;
 
 }
 
@@ -219,46 +215,6 @@ float LPF_Update(LPF_Filter *filter, float input) {
 	return output;
 }
 
-/**
- * @brief Initialize the Notch Filter
- * @param centerFreq: The frequency to remove (the peak in your FFT)
- * @param bandwidth: How wide the "cut" is (start with 30.0f)
- * @param sampleFreq: Your STM32H7 loop frequency (e.g., 1000.0f or 8000.0f)
- */
-void Notch_Init(BiquadNotch *filter, float centerFreq, float bandwidth,
-		float sampleFreq) {
-	float omega = 2.0f * M_PI * centerFreq / sampleFreq;
-	float alpha = sinf(omega)
-			* sinhf(logf(2.0f) / 2.0f * bandwidth * omega / sinf(omega));
-
-	float a0 = 1.0f + alpha;
-	filter->b0 = 1.0f / a0;
-	filter->b1 = -2.0f * cosf(omega) / a0;
-	filter->b2 = 1.0f / a0;
-	filter->a1 = filter->b1;
-	filter->a2 = (1.0f - alpha) / a0;
-
-	// Reset history
-	filter->x1 = filter->x2 = filter->y1 = filter->y2 = 0.0f;
-}
-
-/**
- * @brief Process new IMU data through the filter
- */
-float Notch_Update(BiquadNotch *filter, float input) {
-	// Standard Direct Form I Biquad Equation
-	float output = filter->b0 * input + filter->b1 * filter->x1
-			+ filter->b2 * filter->x2 - filter->a1 * filter->y1
-			- filter->a2 * filter->y2;
-
-	// Update history for next sample
-	filter->x2 = filter->x1;
-	filter->x1 = input;
-	filter->y2 = filter->y1;
-	filter->y1 = output;
-
-	return output;
-}
 
 
 void convert_local_to_globalframe(MFX_output_t *data_out, float dt) {
@@ -278,7 +234,6 @@ void convert_local_to_globalframe(MFX_output_t *data_out, float dt) {
 
     // 3. Apply Quaternion Rotation: v_global = q * v_local * q_conj
     // Using the optimized Hamilton product expansion
-    float a_global[3] = {0.0f,0.0f,0.0f};
 
     // Intermediate cross product terms
     float tx = 2.0f * (qy * az - qz * ay);
@@ -289,50 +244,22 @@ void convert_local_to_globalframe(MFX_output_t *data_out, float dt) {
     a_global[1] = ay + qw * ty + (qz * tx - qx * tz);
     a_global[2] = az + qw * tz + (qx * ty - qy * tx);
 
-    // 4. Integrate to Velocity
-    for (int i = 0; i < 3; i++) {
-        // Convert Gs to m/s^2 (Standard Gravity)
-        float acc_ms2 = a_global[i] * 9.80665f;
-        if(isnan(acc_ms2))
-        {
-        	acc_ms2=0.0f;
-        }
-
-        // Deadzone: Filter out remaining 250Hz motor vibrations
-        // that escaped the hardware and software notch filters
-        if (fabsf(acc_ms2) < 0.001f) {
-            acc_ms2 = 0.0f;
-        }
-
-        // Integrate Acceleration -> Velocity
-        velocity_earth[i] += acc_ms2 * dt;
-
-        // "Leaky" Integrator: Essential for Inertial-only flight
-        // without a Barometer or GPS to prevent velocity runaway.
-        velocity_earth[i] *= 0.985f;
-
-    }
-}
-// Global position in Earth Frame (Meters)
-// [0]=North, [1]=East, [2]=Down
-
-/**
- * @brief Integrates velocity to determine global position
- * @param dt: Sampling period (0.002403846f)
- */
-void integrate_global_position(float dt) {
-    for (int i = 0; i < 3; i++) {
-        // Simple Euler Integration
-        position_earth[i] += velocity_earth[i] * dt;
-
-        /*
-         * WARNING: We do NOT use a "Leak" on position.
-         * If we leak position, the drone will always think its
-         * starting point is moving toward it.
-         * Position drift must be managed by the VELOCITY leak.
-         */
-    }
 }
 
 
+float  update_altitude_fusion(float baro_alt, float acc_z_earth, float dt) {
+	const float M_TO_FT = 3.28084f;
+	float acc_z_ft = a_global[2] * M_TO_FT;
+    // 1. Predict state using Accelerometer
+    fused_vel += acc_z_earth * dt;
+    fused_alt += fused_vel * dt + 0.5f * acc_z_earth * dt * dt;
+
+    // 2. Calculate Error (Baro vs. Prediction)
+    float error = baro_alt - fused_alt;
+
+    // 3. Correct the state (Tuning constants: 0.1 and 0.01 are good starts)
+    fused_alt += error * 0.1f;    // Pulls altitude toward baro
+    fused_vel += error * 0.01f;   // Pulls velocity toward baro
+    return fused_alt;
+}
 

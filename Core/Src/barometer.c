@@ -9,6 +9,8 @@
 #include "barometer.h"
 #include <stdio.h>
 #include "print.h"
+#include "pid_control.h"
+extern Flight_Control_t fc ;
 // Global array to store MS5611 calibration coefficients
 uint16_t C[7]; // MS5611 has 6 coefficients (1-6). C[0] is typically reserved or CRC.
 
@@ -18,6 +20,7 @@ float current_temperature = 0.0f;
 float current_pressure = 0.0f;
 float current_altitude = 0.0f;
 float relative_altitude = 0.0f;
+float alt_fused = 0.0f;
 static float P_ground_accumulator = 0; // Temporary sum for averaging
 static float P_at_ground = 101325.0f;  // Actual reference pressure
 static uint16_t calib_counter = 0;     // Use uint16 for safer counting
@@ -139,13 +142,17 @@ void Calculate_Final_Altitude(uint32_t D1, uint32_t D2) {
 		// (Adjusted for the 20 skipped samples)
 		P_at_ground = P_ground_accumulator / (float)(CALIB_SAMPLES - SKIP_SAMPLES);
 		calib_counter++;
+		fc.ground_offset = relative_altitude = 44330.0f
+				* (1.0f - powf(current_pressure / P_at_ground, 0.190295f));;
+
 	} else {
 		// 8. NORMAL FLIGHT CALCULATION
 		// Calculate altitude relative to the captured ground pressure
 		relative_altitude = 44330.0f
 				* (1.0f - powf(current_pressure / P_at_ground, 0.190295f));
-		uint8_t size = sprintf(buffer, "%f\r\n", relative_altitude);
-		usb_print(buffer, size);
+		relative_altitude = relative_altitude-fc.ground_offset;
+//		uint8_t size = sprintf(buffer, "%f\r\n", relative_altitude);
+//		usb_print(buffer, size);
 
 	}
 

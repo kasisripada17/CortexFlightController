@@ -16,6 +16,11 @@
 #include <stdbool.h>
 #include "sensor_fusion.h"
 #include "barometer.h"
+
+extern float relative_altitude ;
+extern float a_global[3];
+extern float alt_fused ;
+
 // variables
 extern SPI_HandleTypeDef hspi1;
 volatile IMU_Data_t sensor_data = { 0 };
@@ -221,6 +226,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		            if(HAL_GetTick() - lastBaroTime >= 10) {
 		                D2 = MS5611_Read_ADC_Result();
 		                Calculate_Final_Altitude(D1, D2);
+		                float dt  = 1.0f/416.0f;
+		                alt_fused =   update_altitude_fusion( relative_altitude,  a_global[2],  dt) ;
+		               // update_tuning_from_radio();
+
 		                currentBaroState = BARO_STATE_IDLE; // Start over
 		            }
 		            break;

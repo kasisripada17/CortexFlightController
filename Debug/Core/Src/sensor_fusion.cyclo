@@ -1,8 +1,6 @@
-../Core/Src/sensor_fusion.c:78:6:motionfx_init	2
-../Core/Src/sensor_fusion.c:134:6:motion_fx_update	1
-../Core/Src/sensor_fusion.c:208:6:LPF_Init	1
-../Core/Src/sensor_fusion.c:216:7:LPF_Update	1
-../Core/Src/sensor_fusion.c:228:6:Notch_Init	1
-../Core/Src/sensor_fusion.c:248:7:Notch_Update	1
-../Core/Src/sensor_fusion.c:264:6:convert_local_to_globalframe	4
-../Core/Src/sensor_fusion.c:323:6:integrate_global_position	2
+../Core/Src/sensor_fusion.c:75:6:motionfx_init	2
+../Core/Src/sensor_fusion.c:131:6:motion_fx_update	1
+../Core/Src/sensor_fusion.c:204:6:LPF_Init	1
+../Core/Src/sensor_fusion.c:212:7:LPF_Update	1
+../Core/Src/sensor_fusion.c:220:6:convert_local_to_globalframe	1
+../Core/Src/sensor_fusion.c:250:8:update_altitude_fusion	1

@@ -50,6 +50,7 @@ typedef enum {
 void IMU_Write_Reg(uint8_t reg, uint8_t value) ;
 uint8_t IMU_Read_Reg(uint8_t reg_addr) ;
 uint8_t IMU_Init(void) ;
+float update_altitude_fusion(float baro_alt, float acc_z_earth, float dt) ;
 
 
 

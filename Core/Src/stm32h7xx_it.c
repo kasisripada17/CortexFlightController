@@ -24,11 +24,11 @@
 /* USER CODE BEGIN Includes */
 #include "radio.h"
 /* USER CODE END Includes */
-extern uint8_t sbus_buffer[25] __attribute__((section(".RAM_D2")));
+
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN TD */
-
+extern uint8_t sbus_buffer[25] __attribute__((section(".RAM_D2")));extern uint8_t sbus_buffer[25] __attribute__((section(".RAM_D2")));
 /* USER CODE END TD */
 
 /* Private define ------------------------------------------------------------*/
@@ -61,6 +61,7 @@ extern PCD_HandleTypeDef hpcd_USB_OTG_HS;
 extern TIM_HandleTypeDef htim1;
 extern DMA_HandleTypeDef hdma_uart4_rx;
 extern UART_HandleTypeDef huart4;
+extern UART_HandleTypeDef huart5;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -240,10 +241,8 @@ void DMA1_Stream0_IRQHandler(void)
 
   /* USER CODE END DMA1_Stream0_IRQn 0 */
   HAL_DMA_IRQHandler(&hdma_uart4_rx);
-  Parse_SBUS(); // Data is now guaranteed to be aligned at index 0
-
   /* USER CODE BEGIN DMA1_Stream0_IRQn 1 */
-
+Parse_SBUS(); // Data is now guaranteed to be aligned at index 0
   /* USER CODE END DMA1_Stream0_IRQn 1 */
 }
 
@@ -276,7 +275,19 @@ void UART4_IRQHandler(void)
 
     Parse_SBUS(); // Process the frame that just finished
   }
-  HAL_UART_IRQHandler(&huart4);
+}
+/**
+  * @brief This function handles UART5 global interrupt.
+  */
+void UART5_IRQHandler(void)
+{
+  /* USER CODE BEGIN UART5_IRQn 0 */
+
+  /* USER CODE END UART5_IRQn 0 */
+  HAL_UART_IRQHandler(&huart5);
+  /* USER CODE BEGIN UART5_IRQn 1 */
+
+  /* USER CODE END UART5_IRQn 1 */
 }
 
 /**
@@ -291,19 +302,6 @@ void OTG_HS_IRQHandler(void)
   /* USER CODE BEGIN OTG_HS_IRQn 1 */
 
   /* USER CODE END OTG_HS_IRQn 1 */
-}
-
-/**
-  * @brief This function handles DMAMUX1 overrun interrupt.
-  */
-void DMAMUX1_OVR_IRQHandler(void)
-{
-  /* USER CODE BEGIN DMAMUX1_OVR_IRQn 0 */
-
-  /* USER CODE END DMAMUX1_OVR_IRQn 0 */
-  /* USER CODE BEGIN DMAMUX1_OVR_IRQn 1 */
-
-  /* USER CODE END DMAMUX1_OVR_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

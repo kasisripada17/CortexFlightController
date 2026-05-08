@@ -8,7 +8,7 @@ Flight_Control_t fc = {
 		.roll  = {1.2f, 0.08f, 0.004f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
 		.pitch = {1.2f, 0.08, 0.004f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
 		.yaw   = {3.10f, 0.9f, 0.001f, 0.0f, 0.0f, 0.0f, 150.0f, 500.0f},
-		 .alt   = {10.0f, 0.1f, 0.5f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
+		 .alt   = {6.0f, 0.1f, 0.5f, 0.0f, 0.0f, 0.0f, 400.0f, 500.0f},
     // Outer Angle Loops (The "Brain" for Leveling)
     .roll_angle_p  = 2.0f,
     .pitch_angle_p = 2.0f,

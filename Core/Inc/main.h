@@ -71,6 +71,8 @@ void Error_Handler(void);
 #define int_Pin GPIO_PIN_4
 #define int_GPIO_Port GPIOC
 #define int_EXTI_IRQn EXTI4_IRQn
+#define TELIMETRY_TX_Pin GPIO_PIN_13
+#define TELIMETRY_TX_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

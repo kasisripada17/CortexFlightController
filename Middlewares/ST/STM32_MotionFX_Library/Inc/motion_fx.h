@@ -19,7 +19,7 @@
 /* Define to prevent recursive inclusion -------------------------------------*/
 #ifndef _MOTION_FX_H_
 #define _MOTION_FX_H_
-
+#include <stddef.h>
 #ifdef __cplusplus
 extern "C"
 {
@@ -27,7 +27,7 @@ extern "C"
 
 /* Includes ------------------------------------------------------------------*/
 #include <stdint.h>
-#include <stddef.h>
+
 /** @addtogroup MIDDLEWARES
  * @{
  */

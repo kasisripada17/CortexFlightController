@@ -11,7 +11,7 @@
 #include "pid_control.h"
 #include <stdbool.h>
 #include "print.h"
-#include <math.h>
+#include "arm_math.h"
 
 // --- Altitude Hold Constants ---
 #define VEL_Z_KP        12.0f    // Snappiness of vertical stop
@@ -22,15 +22,19 @@
 #define MAX_TILT_ANGLE 35
 uint8_t buffer[256];
 extern float relative_altitude;
-extern float  alt_fused;
+extern float alt_fused;
+// --- Step 3: PID Computation ---
+float roll_cmd = 0.0f;
+float pitch_cmd = 0.0f;
+float yaw_cmd = 0.0f;
 
 // Add these to your global variables or class members
 bool alt_hold_initialized = false;
 float locked_altitude = 0.0f;
-extern float a_global[3] ;
+extern float a_global[3];
 uint16_t size;
 bool is_angle_mode = false;
-arm_state_t arm_status = DISARMED;
+arm_state_t armed_status = DISARMED;
 extern volatile receiver_t radio;
 extern Flight_Control_t fc;
 extern volatile IMU_Data_t sensor_data;
@@ -39,7 +43,7 @@ bool start_gyro_calibration = false;
 extern Sensor_Calibration gyro_calibration;
 extern float velocity_earth[3];
 bool motor_test = false;
-#define PID_DT (1.0f / 416.0f)
+#define PID_DT DT
 static inline float constrain(float value, float min, float max) {
 	if (value < min)
 		return min;
@@ -71,16 +75,16 @@ void update_arm_status() {
 			&& (radio.pitch >= 1450 && radio.pitch <= 1550)
 			&& (radio.roll >= 1450 && radio.roll <= 1550));
 
-	switch (arm_status) {
+	switch (armed_status) {
 	case DISARMED:
 		if (sticks_in_arm_position) {
 			stick_hold_start = HAL_GetTick();
-			arm_status = ARMING;
+			armed_status = ARMING;
 		} else if (sticks_in_esc_calib_position == 1) {
 			stick_hold_start = HAL_GetTick();
-			arm_status = ESC_CALIBRATION;
+			armed_status = ESC_CALIBRATION;
 		} else if (motor_test_pos == 1) {
-			arm_status = MOTOR_TEST;
+			armed_status = MOTOR_TEST;
 		}
 		break;
 	case ESC_CALIBRATION:
@@ -95,37 +99,36 @@ void update_arm_status() {
 	case ARMING:
 		if (sticks_in_arm_position) {
 			if (HAL_GetTick() - stick_hold_start >= 2000) {
-				arm_status = ARMED_SAFE;
+				armed_status = ARMED_SAFE;
 				// Reset PIDs
 				fc.roll.integral = 0;
 				fc.pitch.integral = 0;
 				fc.yaw.integral = 0;
 
-
 			}
 		} else {
-			arm_status = DISARMED;
+			armed_status = DISARMED;
 		}
 		break;
 
 	case ARMED_SAFE:
 		if (armed_safe_pos)
-			arm_status = ARMED;
+			armed_status = ARMED;
 		break;
 
 	case ARMED:
 		if (sticks_in_disarm_position) {
 			stick_hold_start = HAL_GetTick();
-			arm_status = DISARMING;
+			armed_status = DISARMING;
 		}
 		break;
 
 	case DISARMING:
 		if (sticks_in_disarm_position) {
 			if (HAL_GetTick() - stick_hold_start >= 2000)
-				arm_status = DISARMED;
+				armed_status = DISARMED;
 		} else {
-			arm_status = ARMED;
+			armed_status = ARMED;
 		}
 		break;
 	default:
@@ -150,20 +153,38 @@ void Mix_Motors_Adjusted(float r_cmd, float p_cmd, float y_cmd, float throttle) 
 }
 
 void flight_control(void) {
+	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+
 	get_flight_mode();
 	update_arm_status();
 	const float dt = PID_DT;
 
-	if (arm_status == ARMED) {
-		float target_roll_rate = 0.0f, target_pitch_rate = 0.0f;
+	if (armed_status == ARMED) {
+
 		float current_throttle = (float) radio.throttle;
 
-		// --- Step 1: Altitude Management ---
-		if (flight_mode == ALTITUDE_HOLD) {
+		// --- Step 2: Attitude Management ---
+		if (flight_mode == ACRO) {
+			alt_hold_initialized = 0U;
+
+			fc.target_roll_rate = normalize_radio(radio.roll)*360.0f;
+			fc.target_pitch_rate = -normalize_radio(radio.pitch)*360.0f;
+		} else if (flight_mode == SELF_LEVEL) {
+			alt_hold_initialized = 0U;
+
+			float target_roll_angle = normalize_radio(radio.roll)*360.0f;
+			float target_pitch_angle = -normalize_radio(radio.pitch)*360.0f;
+
+			fc.target_roll_rate = (target_roll_angle
+					- (-sensor_data.roll )) * fc.roll_angle_p;
+			fc.target_pitch_rate = (target_pitch_angle
+					- (-sensor_data.pitch )) * fc.pitch_angle_p;
+
+		} else if (flight_mode == ALTITUDE_HOLD) {
 
 			if (!alt_hold_initialized) {
 				// LOCK THE HEIGHT: Capture current altitude as target
-				fc.target_altitude = alt_fused ;
+				fc.target_altitude = alt_fused;
 
 				// RESET PID: Clear previous I-term to prevent a sudden jump
 				PID_Reset(&fc.alt, 0);
@@ -173,60 +194,41 @@ void flight_control(void) {
 
 			current_throttle = compute_altitude_hold_throttle(dt);
 
-			float target_roll_angle = normalize_radio(
-					radio.roll) * MAX_TILT_ANGLE;
-			float target_pitch_angle = -normalize_radio(
-					radio.pitch) * MAX_TILT_ANGLE;
+			float target_roll_angle = normalize_radio(radio.roll) * MAX_TILT_ANGLE;
 
-			target_roll_rate = (target_roll_angle - (-sensor_data.roll))
-					* fc.roll_angle_p;
-			target_pitch_rate = (target_pitch_angle - (-sensor_data.pitch))
-					* fc.pitch_angle_p;
+			float target_pitch_angle = -normalize_radio(radio.pitch) * MAX_TILT_ANGLE;
+
+			fc.target_roll_rate  = (target_roll_angle  -  (-sensor_data.roll ))  * fc.roll_angle_p;
+			fc.target_pitch_rate = (target_pitch_angle - (-sensor_data.pitch )) * fc.pitch_angle_p;
 		}
-
-		// --- Step 2: Attitude Management ---
-		else if (flight_mode == ACRO) {
-			alt_hold_initialized = 0;
-
-			target_roll_rate = normalize_radio(radio.roll) * MAX_RATE_ACRO;
-			target_pitch_rate = -normalize_radio(radio.pitch) * MAX_RATE_ACRO;
-		} else if (flight_mode == SELF_LEVEL) {
-			alt_hold_initialized = 0;
-
-			float target_roll_angle = normalize_radio(
-					radio.roll) * MAX_TILT_ANGLE;
-			float target_pitch_angle = -normalize_radio(
-					radio.pitch) * MAX_TILT_ANGLE;
-
-			target_roll_rate = (target_roll_angle - (-sensor_data.roll))
-					* fc.roll_angle_p;
-			target_pitch_rate = (target_pitch_angle - (-sensor_data.pitch))
-					* fc.pitch_angle_p;
-
-		}
+		fc.target_yaw_rate = -normalize_radio(radio.yaw)*360.0f;
 
 		// Clamp rates
-		if (target_roll_rate > MAX_RATE_ACRO)
-			target_roll_rate = MAX_RATE_ACRO;
-		if (target_roll_rate < -MAX_RATE_ACRO)
-			target_roll_rate = -MAX_RATE_ACRO;
-		if (target_pitch_rate > MAX_RATE_ACRO)
-			target_pitch_rate = MAX_RATE_ACRO;
-		if (target_pitch_rate < -MAX_RATE_ACRO)
-			target_pitch_rate = -MAX_RATE_ACRO;
-
-		float target_yaw_rate = -normalize_radio(radio.yaw) * 300.0f;
+		if (fc.target_roll_rate > MAX_RATE_ACRO)
+			fc.target_roll_rate = MAX_RATE_ACRO;
+		if (fc.target_roll_rate < -MAX_RATE_ACRO)
+			fc.target_roll_rate = -MAX_RATE_ACRO;
+		if (fc.target_pitch_rate > MAX_RATE_ACRO)
+			fc.target_pitch_rate = MAX_RATE_ACRO;
+		if (fc.target_pitch_rate < -MAX_RATE_ACRO)
+			fc.target_pitch_rate = -MAX_RATE_ACRO;
+		if (fc.target_yaw_rate > MAX_RATE_ACRO)
+			fc.target_yaw_rate = MAX_RATE_ACRO;
+		if (fc.target_yaw_rate < -MAX_RATE_ACRO)
+			fc.target_yaw_rate = -MAX_RATE_ACRO;
 
 		// --- Step 3: PID Computation ---
-		float roll_cmd = PID_Compute(&fc.roll, target_roll_rate,
-				sensor_data.gyro_cal_x, dt);
-		float pitch_cmd = PID_Compute(&fc.pitch, target_pitch_rate,
-				sensor_data.gyro_cal_y, dt);
-		float yaw_cmd = PID_Compute(&fc.yaw, target_yaw_rate,
-				sensor_data.gyro_cal_z, dt);
+		fc.roll.output = PID_Compute(&fc.roll, fc.target_roll_rate,
+				sensor_data.gyro_cal_x , dt);
+		fc.pitch.output = PID_Compute(&fc.pitch, fc.target_pitch_rate,
+				sensor_data.gyro_cal_y , dt);
+		fc.yaw.output = PID_Compute(&fc.yaw, fc.target_yaw_rate,
+				sensor_data.gyro_cal_z , dt);
 
 		// --- Step 4: Mixer Output ---
-		Mix_Motors_Adjusted(roll_cmd, pitch_cmd, yaw_cmd, current_throttle);
+		Mix_Motors_Adjusted(fc.roll.output , fc.pitch.output ,
+				fc.yaw.output, current_throttle);
+		  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
 
 	} else {
 		alt_hold_initialized = 0;
@@ -238,9 +240,7 @@ void flight_control(void) {
 		}
 	}
 
-
 }
-
 
 void get_flight_mode(void) {
 	if (radio.mode >= 1000 && radio.mode <= 1300)
@@ -251,12 +251,11 @@ void get_flight_mode(void) {
 		flight_mode = ALTITUDE_HOLD;
 }
 
-
 float compute_altitude_hold_throttle(float dt) {
 
 	// 1. INITIALIZATION & SAFETY CHECK
 	// If not armed or not in the right mode, reset and pass through manual throttle
-	if (arm_status != ARMED) {
+	if (armed_status != ARMED) {
 		alt_hold_initialized = false;
 		return (float) radio.throttle;
 	}
@@ -265,8 +264,7 @@ float compute_altitude_hold_throttle(float dt) {
 	const float HOVER_THROTTLE = 1500.0f;
 
 	// Compute PID adjustment based on altitude error
-	float adjustment = PID_Compute(&fc.alt, fc.target_altitude,
-			alt_fused , dt);
+	float adjustment = PID_Compute(&fc.alt, fc.target_altitude, alt_fused, dt);
 
 	float final_throttle = radio.throttle + adjustment;
 

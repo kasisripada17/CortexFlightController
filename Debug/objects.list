@@ -1,5 +1,7 @@
+"./Core/Src/altitude_hold.o"
 "./Core/Src/barometer.o"
 "./Core/Src/comms.o"
+"./Core/Src/filters.o"
 "./Core/Src/flight_control.o"
 "./Core/Src/gyro_calibration.o"
 "./Core/Src/lsm6ds3.o"

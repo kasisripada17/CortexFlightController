@@ -32,6 +32,7 @@
 #include "sensor_fusion.h"
 #include <stdbool.h>
 #include "gyro_calibration.h"
+#include "telemetry.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,11 +44,14 @@ extern volatile IMU_Data_t sensor_data;
 uint8_t sbus_buffer[25] __attribute__((section(".RAM_D2")));
 extern uint16_t sbus_channels[16];
 extern uint8_t failsafe_status;
-
+extern float roll_cmd ;
+extern float pitch_cmd;
+extern float yaw_cmd ;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define TELIMETRY
 
 /* USER CODE END PD */
 
@@ -99,6 +103,8 @@ uint8_t mgc_state[MGC_STATE_SIZE] __attribute__((section(".dtcmram")));
 uint8_t mac_state[MAC_STATE_SIZE] __attribute__((section(".dtcmram")));
 extern bool motor_test;
 uint8_t rx_byte;
+void loop_processing(void) ;
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -141,92 +147,100 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  
+  MX_DMA_Init();
   MX_SPI1_Init();
-	MX_USB_DEVICE_Init();
-
-#ifdef TRADITIONAL_RECEIVER
   MX_TIM1_Init();
-
-    HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1); // PE9
-    HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_2); // PE11
-    HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_3); // PE13
-    HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_4); // PE14
-
-#endif
   MX_TIM2_Init();
-  uint8_t rx_byte;
+  MX_USB_DEVICE_Init();
   MX_CRC_Init();
-	// Enable the Interrupt Line 4 (PC4 uses EXTI4)
-	HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
-	HAL_NVIC_EnableIRQ(EXTI4_IRQn);
-	IMU_Init();
-
-	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
-	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
-	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
-	/* Start the first receive manually to kickstart the interrupt chain */
-	update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
-	/* Disable Caches for debugging library linking */
-
-	gyro_calibration_init();
-	motionfx_init();
-
-#ifdef SBUS_RECEIVER
-	MX_DMA_Init();
-	MX_UART4_Init();
-	HAL_UART_Receive_DMA(&huart4, sbus_buffer, 25);
-	__HAL_UART_ENABLE_IT(&huart4, UART_IT_IDLE); // Enable the IDLE line interrupt
-
-#endif
   MX_UART4_Init();
   MX_UART5_Init();
-  HAL_UART_Receive_IT(&huart5, &rx_byte, 1);
-
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
+  /* USER CODE END 1 */
 
+  	/* MPU Configuration--------------------------------------------------------*/
+  	MPU_Config();
+
+  	/* MCU Configuration--------------------------------------------------------*/
+
+  	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  	HAL_Init();
+
+  	/* USER CODE BEGIN Init */
+
+  	/* USER CODE END Init */
+
+  	/* Configure the system clock */
+  	SystemClock_Config();
+
+  	/* Configure the peripherals common clocks */
+  	PeriphCommonClock_Config();
+
+  	/* USER CODE BEGIN SysInit */
+
+  	/* USER CODE END SysInit */
+
+  	/* Initialize all configured peripherals */
+  	MX_GPIO_Init();
+
+  	MX_SPI1_Init();
+  	MX_USB_DEVICE_Init();
+
+  #ifdef TRADITIONAL_RECEIVER
+  	MX_TIM1_Init();
+
+  	HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1); // PE9
+  	HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_2); // PE11
+  	HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_3); // PE13
+  	HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_4); // PE14
+
+  #endif
+  	MX_TIM2_Init();
+  	MX_CRC_Init();
+
+  	IMU_Init();
+
+  	// Enable the Interrupt Line 4 (PC4 uses EXTI4)
+  	HAL_NVIC_SetPriority(EXTI4_IRQn, 1, 0);
+  	HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+
+  	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
+  	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
+  	/* Start the first receive manually to kickstart the interrupt chain */
+  	update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
+  	/* Disable Caches for debugging library linking */
+
+  	gyro_calibration_init();
+
+  #ifdef MOTION_FX_ST
+
+  	motionfx_init();
+  #endif
+
+  #ifdef SBUS_RECEIVER
+  	MX_DMA_Init();
+  	MX_UART4_Init();
+  	HAL_UART_Receive_DMA(&huart4, sbus_buffer, 25);
+  	__HAL_UART_ENABLE_IT(&huart4, UART_IT_IDLE); // Enable the IDLE line interrupt
+  #endif
+
+  #ifdef TELIMETRY
+  	 MX_UART5_Init();
+  //	 HAL_UART_Receive_IT(&huart5, &rx_byte, 1);
+  #endif
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
 
-		if (esc_calibration) {
-			usb_print((uint8_t*) "ESC_CALIBRATION_STARETED\r\n",
-					strlen("ESC_CALIBRATION_STARETED\r\n"));
-
-			update_motors((uint32_t) radio.throttle, (uint32_t) radio.throttle,
-					(uint32_t) radio.throttle, (uint32_t) radio.throttle);
-		}
 
 
-		static uint32_t current, old;
-		current = HAL_GetTick();
-		if (current - old > 10) {
-//			for (uint8_t i = 0x00; i <= 0x5F; i++) {
-//			        // Skip reserved or sensitive ranges if necessary,
-//			        // but 0x00-0x5F covers all CTRL and Embedded config
-//
-//			        size = sprintf(buffer, "REG 0x%02X: 0x%02X\r\n", i, IMU_Read_Reg(i));
-//			        usb_print(buffer,size);
-//
-//			        // Small delay to prevent USB buffer overflow during the dump
-//			    }
-			old = current;
-
-//			size = sprintf(buffer, "\r\n%f,%f,%f,%f,%x,%x", radio.throttle,
-//					radio.roll, radio.pitch, radio.yaw, sbus_buffer[0],
-//					sbus_buffer[24]);
-//			usb_print(buffer, size);
-
-//			uint8_t size = sprintf((char*) buffer, "\r\n%f,%f,%f",
-//					sensor_data.roll, sensor_data.pitch,
-//					sensor_data.yaw		);
-//			usb_print(buffer, size);
+		 loop_processing();
 
 
-		}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -601,7 +615,7 @@ static void MX_UART5_Init(void)
 
   /* USER CODE END UART5_Init 1 */
   huart5.Instance = UART5;
-  huart5.Init.BaudRate = 57600;
+  huart5.Init.BaudRate = 56700;
   huart5.Init.WordLength = UART_WORDLENGTH_8B;
   huart5.Init.StopBits = UART_STOPBITS_1;
   huart5.Init.Parity = UART_PARITY_NONE;
@@ -613,7 +627,6 @@ static void MX_UART5_Init(void)
   huart5.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_TXINVERT_INIT|UART_ADVFEATURE_RXINVERT_INIT;
   huart5.AdvancedInit.TxPinLevelInvert = UART_ADVFEATURE_TXINV_ENABLE;
   huart5.AdvancedInit.RxPinLevelInvert = UART_ADVFEATURE_RXINV_ENABLE;
-  huart5.AdvancedInit.Swap = UART_ADVFEATURE_SWAP_DISABLE;        // Ensure it's disabled
   if (HAL_HalfDuplex_Init(&huart5) != HAL_OK)
   {
     Error_Handler();
@@ -647,10 +660,8 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Stream0_IRQn interrupt configuration */
-	HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 2, 0);
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
-	HAL_NVIC_SetPriority(DMAMUX1_OVR_IRQn, 0, 0);
-	HAL_NVIC_EnableIRQ(DMAMUX1_OVR_IRQn);
 
 }
 
@@ -672,7 +683,16 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+
+
+
+  /*Configure GPIO pin : PA4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
@@ -696,15 +716,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET); // Set HIGH first to avoid bus conflict
-
-	GPIO_InitStruct.Pin = GPIO_PIN_15;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH; // High speed for SPI integrity
-	HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
   /* EXTI interrupt init*/
-	HAL_NVIC_SetPriority(EXTI0_IRQn, 5, 0);
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
   HAL_NVIC_SetPriority(int_EXTI_IRQn, 0, 0);
@@ -716,6 +729,77 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void loop_processing(void) {
+
+	static uint32_t current, old;
+	current = HAL_GetTick();
+	if (current - old > 100) {
+		old = current;
+#define LOG_GYRO
+#ifdef LOG_GYRO
+//
+//			usb_print(buffer, size);
+//			uint8_t size = sprintf((char*) buffer, "\r\n%f,%f,%f,%f,%f,%f",
+//							sensor_data.gyro_x,
+//							sensor_data.gyro_y,
+//							sensor_data.gyro_z,
+//							sensor_data.gyro_cal_x,
+//							sensor_data.gyro_cal_y,
+//							sensor_data.gyro_cal_z);
+#endif
+
+#ifdef LOG_PID_GAINS
+
+			uint8_t size = sprintf((char*) buffer, "\r\n%f,%f,%f,%f,%f,%f",
+						fc.roll.kp,fc.roll.ki,fc.roll.kd,fc.pitch.kp,fc.pitch.ki,fc.pitch.kd);
+
+#endif
+//#define PID_LOOP_VARIABLES
+#ifdef PID_LOOP_VARIABLES
+
+					uint8_t size = sprintf((char*) buffer, "\r\n%f,%f,%f,%f,%f,%f",
+							fc.target_roll_rate,fc.target_pitch_rate,fc.target_yaw_rate,fc.roll.output,fc.pitch.output,fc.yaw.output);
+#endif
+//		usb_print(buffer, size);
+	}
+//	uint8_t rx_buf[2];
+//			HAL_StatusTypeDef status;
+//
+//			// 1. Look for the 2-byte sequence (0x7E + Physical ID)
+//			// We use a short 1ms timeout so it doesn't block your loop if nothing is arriving
+//			status = HAL_UART_Receive(&huart5, rx_buf, 2, 1);
+//
+//			//size = sprintf(buffer,"%x, %x\r\n",rx_buf[0],rx_buf[1]);
+//			//usb_print(buffer,size);
+//
+//			if (status == HAL_OK) {
+//				// Respond immediately
+//
+//				// If the byte following 0x7E is 0x1B, it's our turn
+//				if (rx_buf[0] == 0x7e && rx_buf[1] == 0x01b) {
+//					// Respond immediately
+//					Send_S_Port_Frame_Fast(0x0100, 1260);
+//
+//				} else {
+//
+//					// 3. Clean up and Re-enable
+//					(void) UART5->RDR;      // Clear the receive register
+//					UART5->ICR = 0xFFFFFFFF; // Clear all interrupt/status flags
+//					UART5->CR1 |= USART_CR1_RE;
+//				}
+//			}
+
+			if (esc_calibration) {
+				usb_print((uint8_t*) "ESC_CALIBRATION_STARETED\r\n",
+						strlen("ESC_CALIBRATION_STARETED\r\n"));
+
+				update_motors((uint32_t) radio.throttle, (uint32_t) radio.throttle,
+						(uint32_t) radio.throttle, (uint32_t) radio.throttle);
+			}
+
+
+
+}
 
 /* USER CODE END 4 */
 

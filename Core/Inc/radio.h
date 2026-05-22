@@ -17,7 +17,10 @@ typedef struct{
 	float mode;
 	float pid_channel_selector;
 	float pid_tune_gain_selector;
-	float pid_gain;
+	float p_gain;
+	float i_gain;
+	float d_gain;
+
 } receiver_t;
 
 /* User constants for the 50cm aircraft */

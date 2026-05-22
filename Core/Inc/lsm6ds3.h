@@ -9,6 +9,8 @@
 #define INC_LSM6DS3_H_
 #include <stdint.h>
 
+#define LOOP_FREQ (float)1666.0f
+#define DT (float)(1.0f/LOOP_FREQ)
 
 
 #define LSM6DS3_ADDR_WHO_AM_I  0x0F

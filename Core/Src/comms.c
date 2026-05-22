@@ -101,59 +101,46 @@ void Comms_ApplyLogic(void) {
 //radio.pid_channel_selector = pwm_channels[5];
 //   radio.pid_tune_gain_selector = pwm_channels[6
 void update_tuning_from_radio(void) {
-    // 1. Determine which axis we are tuning
-	// Switch positions: Low = Roll, Mid = Pitch, High = Yaw
-	if (radio.pid_channel_selector < 1300)
-		PID_tuning_channel = PID_ROLL;	// Roll
-	else if (radio.pid_channel_selector < 1700)
-		PID_tuning_channel = PID_PITCH;	// Roll
-	else
-		PID_tuning_channel = PID_YAW;	// Roll
 
-	// 2. Determine which PID term we are tuning
-	// Switch positions: Low = P, Mid = I, High = D
-	if (radio.pid_tune_gain_selector < 1300)
-		PID_tuning_gain = PID_KP;      // P
-	else if (radio.pid_tune_gain_selector< 1700)
-		PID_tuning_gain = PID_KI;
-	else
-		PID_tuning_gain = PID_KD;
 
-	float knob_percent = (float)(radio.pid_gain - 1000) / 1000.0f;
-	if (knob_percent < 0) knob_percent = 0;
-	if (knob_percent > 1) knob_percent = 1;
 
-	float new_gain = 0.0f;
+	float p_gain = (float)(radio.p_gain - 1000) / 1000.0f;
+	float i_gain = (float)(radio.i_gain - 1000) / 1000.0f;
+	float d_gain = (float)(radio.d_gain - 1000) / 1000.0f;
 
-	// 4. Apply scale based on which term is selected
-	switch (PID_tuning_gain) {
-	    case PID_KP:
-	        new_gain = knob_percent * 10.0f;  // Range: 0.0 to 10.0
-	        break;
-	    case PID_KI:
-	        new_gain = knob_percent * 2.0f;   // Range: 0.0 to 2.0
-	        break;
-	    case PID_KD:
-	        new_gain = knob_percent * 0.1f;   // Range: 0.0 to 0.1
-	        break;
-	}
+	if (p_gain < 0.0f) p_gain = 0.0f;
+	if (p_gain > 1.0f) p_gain = 1.0f;
+	if (i_gain < 0.0f) i_gain = 0.0f;
+	if (i_gain > 1.0f) i_gain = 1.0f;
+	if (d_gain < 0.0f) d_gain = 0.0f;
+	if (d_gain > 1.0f) d_gain = 1.0f;
 
-	// 5. Inject into the selected Axis
-    PID_Controller* target_pid = NULL;
-	if (PID_tuning_channel == PID_ROLL)
-		target_pid = &fc.roll;
-	else if (PID_tuning_channel == PID_PITCH)
-		target_pid = &fc.pitch;
-	else
-		target_pid = &fc.yaw;
 
-	// 6. Assignment
-	if (PID_tuning_gain == PID_KP)
-		target_pid->kp = new_gain;
-	else if (PID_tuning_gain == PID_KI)
-		target_pid->ki = new_gain;
-	else if (PID_tuning_gain == PID_KD)
-		target_pid->kd = new_gain;
-	uint8_t size = sprintf(buffer, "%d, %d, %f\r\n",PID_tuning_channel,PID_tuning_gain,new_gain);
-	usb_print(buffer,size);
+
+	p_gain = p_gain * 5.0f;  // Range: 0.0 to 10.0
+
+	i_gain = i_gain * 3.0f;   // Range: 0.0 to 2.0
+
+	d_gain = d_gain * 0.05f;   // Range: 0.0 to 0.1
+
+if(p_gain<0.1)
+{
+	p_gain = 0.1f;
+}
+if(i_gain<0.001f)
+{
+	i_gain = 0.001;
+}
+
+
+	fc.roll.kp = p_gain;
+	fc.pitch.kp = p_gain;
+
+	fc.roll.ki = i_gain;
+	fc.pitch.ki = i_gain;
+
+	fc.roll.kd = d_gain;
+	fc.pitch.kd = d_gain;
+
+
 }

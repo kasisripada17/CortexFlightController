@@ -13,7 +13,7 @@ extern TIM_HandleTypeDef htim2;
 
 extern 	uint8_t buffer[256];
 extern uint16_t size;
-extern arm_state_t arm_status ;
+extern arm_state_t armed_status ;
 
 void update_motors(uint32_t m1, uint32_t m2, uint32_t m3, uint32_t m4) {
 

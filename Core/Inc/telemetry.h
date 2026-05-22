@@ -17,7 +17,7 @@ typedef struct {
     uint8_t  checksum;
 } FrSky_Frame_t;
 
-void Send_S_Port_Frame(uint16_t id, int32_t val) ;
+void Send_S_Port_Frame_Fast(uint16_t id, int32_t val) ;
 
 
 

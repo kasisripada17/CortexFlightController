@@ -14,29 +14,44 @@ typedef struct {
     float kp;
     float ki;
     float kd;
+    float kff;               // <--- Added: Feed-Forward Gain
 
     // State variables
     float integral;
     float last_error;
-    float last_input; // Used for "Derivative on Measurement" to prevent setpoint kicks
+    float last_input;        // Used for "Derivative on Measurement"
+    float last_d_term;       // <--- Added: State tracker for the PT1 filter
+    float last_target;
+
+    // Filtering
+    float d_filter_alpha;    // <--- Added: Cutoff weight (0.1 to 0.5)
 
     // Limits
-    float max_integral;
+    float max_i_output;
     float max_output;
+    float output;
+    float d_cutoff_hz;  // Set this to 20.0f or 30.0f Hz instead of a raw alpha
+
 } PID_Controller;
 
+
+
+
 typedef struct {
-    PID_Controller roll;
-    PID_Controller pitch;
-    PID_Controller yaw;
-    PID_Controller alt;      // <--- Added for Altitude Hold
-    // Outer Angle Loop Gains
-    float roll_angle_p;
-    float pitch_angle_p;
-    // Altitude Management
-        float target_altitude;   // The "locked" height
-        float hover_throttle;    // The base throttle needed to stay level
-        float ground_offset ;
+	PID_Controller roll;
+	PID_Controller pitch;
+	PID_Controller yaw;
+	PID_Controller alt;      // <--- Added for Altitude Hold
+	// Outer Angle Loop Gains
+	float roll_angle_p;
+	float pitch_angle_p;
+	// Altitude Management
+	float target_altitude;   // The "locked" height
+	float hover_throttle;    // The base throttle needed to stay level
+	float ground_offset;
+	float target_roll_rate;
+	float target_pitch_rate;
+	float target_yaw_rate;
 } Flight_Control_t;
 
 float PID_Compute(PID_Controller *pid, float target, float actual, float dt) ;

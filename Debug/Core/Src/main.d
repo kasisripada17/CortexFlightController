@@ -51,7 +51,9 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  ../Middlewares/ST/STM32_USB_Device_Library/Core/Inc/usbd_ioreq.h \
  ../Middlewares/ST/STM32_USB_Device_Library/Core/Inc/usbd_ctlreq.h \
  ../Core/Inc/flight_control.h ../Core/Inc/sensor_fusion.h \
- ../Core/Inc/gyro_calibration.h
+ ../Core/Inc/gyro_calibration.h \
+ ../Middlewares/ST/STM32_MotionGC_Library/Inc/motion_gc.h \
+ ../Core/Inc/telemetry.h
 ../Core/Inc/main.h:
 ../Drivers/STM32H7xx_HAL_Driver/Inc/stm32h7xx_hal.h:
 ../Core/Inc/stm32h7xx_hal_conf.h:
@@ -111,3 +113,5 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 ../Core/Inc/flight_control.h:
 ../Core/Inc/sensor_fusion.h:
 ../Core/Inc/gyro_calibration.h:
+../Middlewares/ST/STM32_MotionGC_Library/Inc/motion_gc.h:
+../Core/Inc/telemetry.h:

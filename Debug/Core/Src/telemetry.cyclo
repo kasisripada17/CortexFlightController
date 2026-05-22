@@ -1,5 +1,3 @@
-../Core/Src/telemetry.c:20:9:FrSky_CalculateChecksum	3
-../Core/Src/telemetry.c:30:6:SPort_Write_Byte_Stuffed	3
-../Core/Src/telemetry.c:41:6:Send_S_Port_Frame	1
-../Core/Src/telemetry.c:67:6:HAL_UART_RxCpltCallback	3
-../Core/Src/telemetry.c:79:6:SPort_Write_Byte	3
+../Core/Src/telemetry.c:18:9:FrSky_CalculateChecksum	3
+../Core/Src/telemetry.c:30:6:Send_S_Port_Frame_Fast	1
+../Core/Src/telemetry.c:59:7:HAL_UART_RxCpltCallback	4

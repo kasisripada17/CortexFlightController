@@ -9,28 +9,30 @@ Flight_Control_t fc = {
 // Inner Rate Loops (The "Muscle")
 // Format: {kp, ki, kd, kff, integral, last_error, last_input, last_d_term, d_filter_alpha, max_integral, max_output, output, d_cutoff_hz}
 
-
 		.roll  = {
-		        .kp = 0.4f, .ki = 0.1f, .kd = 0.008f, .kff = 0.15f,
-		        .max_i_output =  150.00f, .max_output = 400.0f, .d_cutoff_hz = 30.0f,
+		        .kp = 1.0f, .ki = 0.1f, .kd = 0.004f, .kff = 0.15f,
+		        .max_i_output = 150.00f, .max_output = 400.0f, .d_cutoff_hz = 20.0f,
 		        .integral = 0.0f, .last_error = 0.0f, .last_input = 0.0f,
 		        .last_d_term = 0.0f, .last_target = 0.0f, .d_filter_alpha = 0.0f, .output = 0.0f
 		    },
 		    .pitch = {
-		        .kp = 0.4f, .ki = 0.1f, .kd = 0.008f, .kff = 0.15f,
-		        .max_i_output = 150.00f, .max_output = 400.0f, .d_cutoff_hz = 30.0f,
+		        // With the 0.80f mixer fix, KP can align at 1.05f to account purely for lower inertia.
+		        // KD is dropped by 20% to 0.0032f because there is no weight on the nose/tail to dampen.
+		        .kp = 1.05f, .ki = 0.1f, .kd = 0.0032f, .kff = 0.15f,
+		        .max_i_output = 150.00f, .max_output = 400.0f, .d_cutoff_hz = 20.0f,
 		        .integral = 0.0f, .last_error = 0.0f, .last_input = 0.0f,
 		        .last_d_term = 0.0f, .last_target = 0.0f, .d_filter_alpha = 0.0f, .output = 0.0f
 		    },
 		    .yaw   = {
-		        .kp = 0.75f, .ki = 0.3f, .kd = 0.000f, .kff = 0.00f,
+		        // Tuned to prevent the low-inertia pitch axis from dipping during high-speed spins
+		        .kp = 0.70f, .ki = 0.12f, .kd = 0.0012f, .kff = 0.05f,
 		        .max_i_output = 150.00f, .max_output = 400.0f, .d_cutoff_hz = 20.0f,
 		        .integral = 0.0f, .last_error = 0.0f, .last_input = 0.0f,
 		        .last_d_term = 0.0f, .last_target = 0.0f, .d_filter_alpha = 0.0f, .output = 0.0f
 		    },
     // Outer Angle Loops (The "Brain" for Leveling)
-    .roll_angle_p  = 2.5f,
-    .pitch_angle_p = 2.5f,
+    .roll_angle_p  = 4.5f,
+    .pitch_angle_p = 4.5f,
 
     // Altitude Management
     .target_altitude = 0.0f,

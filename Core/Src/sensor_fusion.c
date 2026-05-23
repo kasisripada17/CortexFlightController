@@ -226,8 +226,8 @@ void motion_fx_update(void) {
 	sensor_data.yaw = data_out.rotation[0];
 #endif
 
-	sensor_data.roll = -roll;
-	sensor_data.pitch = -pitch ;
+	sensor_data.roll = roll;
+	sensor_data.pitch = pitch ;
 
 
 //

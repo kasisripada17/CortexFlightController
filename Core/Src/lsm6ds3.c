@@ -250,7 +250,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 				float dt = DT;
 				alt_fused = update_altitude_fusion(relative_altitude,
 						a_global[2], dt);
-				update_tuning_from_radio();
+				//update_tuning_from_radio();
 
 				currentBaroState = BARO_STATE_IDLE; // Start over
 			}

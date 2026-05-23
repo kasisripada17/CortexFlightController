@@ -18,8 +18,8 @@
 #define VEL_Z_KI        0.8f     // Ability to hold weight over time
 #define STICK_DEADZONE  50       // PWM deadzone around 1500 for DJI feel
 #define MAX_CLIMB_RATE  2.5f     // Max vertical speed in m/s
-#define MAX_RATE_ACRO 250.0f
-#define MAX_TILT_ANGLE 35
+#define MAX_RATE_ACRO 350.0f
+#define MAX_TILT_ANGLE 50
 uint8_t buffer[256];
 extern float relative_altitude;
 extern float alt_fused;
@@ -101,9 +101,9 @@ void update_arm_status() {
 			if (HAL_GetTick() - stick_hold_start >= 2000) {
 				armed_status = ARMED_SAFE;
 				// Reset PIDs
-				fc.roll.integral = 0;
-				fc.pitch.integral = 0;
-				fc.yaw.integral = 0;
+				fc.roll.integral = 0.0f;
+				fc.pitch.integral = 0.0f;
+				fc.yaw.integral = 0.0f;
 
 			}
 		} else {
@@ -167,19 +167,31 @@ void flight_control(void) {
 		if (flight_mode == ACRO) {
 			alt_hold_initialized = 0U;
 
-			fc.target_roll_rate = normalize_radio(radio.roll)*360.0f;
-			fc.target_pitch_rate = -normalize_radio(radio.pitch)*360.0f;
-		} else if (flight_mode == SELF_LEVEL) {
-			alt_hold_initialized = 0U;
+			fc.target_roll_rate = normalize_radio(radio.roll)*MAX_RATE_ACRO;
+			fc.target_pitch_rate = -normalize_radio(radio.pitch)*MAX_RATE_ACRO;
+		}else if (flight_mode == SELF_LEVEL) {
+		    alt_hold_initialized = 0U;
 
-			float target_roll_angle = normalize_radio(radio.roll)*360.0f;
-			float target_pitch_angle = -normalize_radio(radio.pitch)*360.0f;
+		    // 1. Define hard geometric and structural limits
 
-			fc.target_roll_rate = (target_roll_angle
-					- (-sensor_data.roll )) * fc.roll_angle_p;
-			fc.target_pitch_rate = (target_pitch_angle
-					- (-sensor_data.pitch )) * fc.pitch_angle_p;
+		    // 2. Map radio sticks cleanly to a safe maximum tilt angle
+		    float target_roll_angle  = normalize_radio(radio.roll) * MAX_TILT_ANGLE;
+		    float target_pitch_angle = -normalize_radio(radio.pitch) * MAX_TILT_ANGLE;
 
+		    // 3. Compute outer-loop error and scale by Angle P gain
+		    float commanded_roll_rate  = (target_roll_angle - sensor_data.roll) * fc.roll_angle_p;
+		    float commanded_pitch_rate = (target_pitch_angle - sensor_data.pitch) * fc.pitch_angle_p;
+
+		    // 4. CRITICAL STEP: Clamp the outputs before feeding them to the inner loop
+		    if (commanded_roll_rate > MAX_RATE_ACRO)  commanded_roll_rate = MAX_RATE_ACRO;
+		    if (commanded_roll_rate < -MAX_RATE_ACRO) commanded_roll_rate = -MAX_RATE_ACRO;
+
+		    if (commanded_pitch_rate > MAX_RATE_ACRO)  commanded_pitch_rate = MAX_RATE_ACRO;
+		    if (commanded_pitch_rate < -MAX_RATE_ACRO) commanded_pitch_rate = -MAX_RATE_ACRO;
+
+		    // 5. Pass the safe, constrained target rates down to the inner loop hot-path
+		    fc.target_roll_rate  = commanded_roll_rate;
+		    fc.target_pitch_rate = commanded_pitch_rate;
 		} else if (flight_mode == ALTITUDE_HOLD) {
 
 			if (!alt_hold_initialized) {
@@ -193,13 +205,20 @@ void flight_control(void) {
 			}
 
 			current_throttle = compute_altitude_hold_throttle(dt);
+		    // 2. Map radio sticks cleanly to a safe maximum tilt angle
+		    float target_roll_angle  = normalize_radio(radio.roll) * MAX_TILT_ANGLE;
+		    float target_pitch_angle = -normalize_radio(radio.pitch) * MAX_TILT_ANGLE;
 
-			float target_roll_angle = normalize_radio(radio.roll) * MAX_TILT_ANGLE;
+		    // 3. Compute outer-loop error and scale by Angle P gain
+		    float commanded_roll_rate  = (target_roll_angle - sensor_data.roll) * fc.roll_angle_p;
+		    float commanded_pitch_rate = (target_pitch_angle - sensor_data.pitch) * fc.pitch_angle_p;
 
-			float target_pitch_angle = -normalize_radio(radio.pitch) * MAX_TILT_ANGLE;
+		    // 4. CRITICAL STEP: Clamp the outputs before feeding them to the inner loop
+		    if (commanded_roll_rate > MAX_RATE_ACRO)  commanded_roll_rate = MAX_RATE_ACRO;
+		    if (commanded_roll_rate < -MAX_RATE_ACRO) commanded_roll_rate = -MAX_RATE_ACRO;
 
-			fc.target_roll_rate  = (target_roll_angle  -  (-sensor_data.roll ))  * fc.roll_angle_p;
-			fc.target_pitch_rate = (target_pitch_angle - (-sensor_data.pitch )) * fc.pitch_angle_p;
+		    if (commanded_pitch_rate > MAX_RATE_ACRO)  commanded_pitch_rate = MAX_RATE_ACRO;
+		    if (commanded_pitch_rate < -MAX_RATE_ACRO) commanded_pitch_rate = -MAX_RATE_ACRO;
 		}
 		fc.target_yaw_rate = -normalize_radio(radio.yaw)*360.0f;
 
@@ -218,7 +237,7 @@ void flight_control(void) {
 			fc.target_yaw_rate = -MAX_RATE_ACRO;
 
 		// --- Step 3: PID Computation ---
-		fc.roll.output = PID_Compute(&fc.roll, fc.target_roll_rate,
+		fc.roll.output = 0.80f*PID_Compute(&fc.roll, fc.target_roll_rate,
 				sensor_data.gyro_cal_x , dt);
 		fc.pitch.output = PID_Compute(&fc.pitch, fc.target_pitch_rate,
 				sensor_data.gyro_cal_y , dt);

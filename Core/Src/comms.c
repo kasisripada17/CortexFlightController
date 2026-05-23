@@ -117,9 +117,9 @@ void update_tuning_from_radio(void) {
 
 
 
-	p_gain = p_gain * 5.0f;  // Range: 0.0 to 10.0
+	p_gain = p_gain * 2.0f;  // Range: 0.0 to 10.0
 
-	i_gain = i_gain * 3.0f;   // Range: 0.0 to 2.0
+	i_gain = i_gain * 1.0f;   // Range: 0.0 to 2.0
 
 	d_gain = d_gain * 0.05f;   // Range: 0.0 to 0.1
 

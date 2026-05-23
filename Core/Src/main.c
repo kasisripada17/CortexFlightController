@@ -15,7 +15,9 @@
  *
  ******************************************************************************
  */
-/* USER CODE END Header */
+/* USER CODE END Header *
+ *
+ * /
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "usb_device.h"
@@ -179,7 +181,15 @@ int main(void)
   	PeriphCommonClock_Config();
 
   	/* USER CODE BEGIN SysInit */
+  	// 1. Enable the Instruction Cache (Safe to just enable)
+  	  SCB_EnableICache();
 
+  	  // 2. CRITICAL: Invalidate the Data Cache FIRST to clear power-up garbage tags.
+  	  // Do NOT call a "Clean" or "CleanInvalidate" function here!
+  	  SCB_InvalidateDCache();
+
+  	  // 3. Now it is safe to enable the Data Cache
+  	  SCB_EnableDCache();
   	/* USER CODE END SysInit */
 
   	/* Initialize all configured peripherals */

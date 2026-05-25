@@ -27,7 +27,8 @@ extern float alt_fused;
 float roll_cmd = 0.0f;
 float pitch_cmd = 0.0f;
 float yaw_cmd = 0.0f;
-
+#define TPA_BREAKPOINT 1350.0f  // Throttle level where attenuation begins (just above hover)
+#define TPA_RATE       0.35f    // Attenuate P-gains by 35% at 1000% full throttle
 // Add these to your global variables or class members
 bool alt_hold_initialized = false;
 float locked_altitude = 0.0f;
@@ -51,6 +52,7 @@ static inline float constrain(float value, float min, float max) {
 		return max;
 	return value;
 }
+float gyro_filteredx = 0.0f, gyro_filteredy = 0.0f, gyro_filteredz = 0.0f;
 
 Flight_Mode_t flight_mode = ACRO;
 
@@ -238,22 +240,39 @@ void flight_control(void) {
 
 		// --- Step 3: PID Computation ---
 		fc.roll.output = 0.80f*PID_Compute(&fc.roll, fc.target_roll_rate,
-				sensor_data.gyro_cal_x , dt);
+				gyro_filteredx , dt);
 		fc.pitch.output = PID_Compute(&fc.pitch, fc.target_pitch_rate,
-				sensor_data.gyro_cal_y , dt);
+				gyro_filteredy , dt);
 		fc.yaw.output = PID_Compute(&fc.yaw, fc.target_yaw_rate,
-				sensor_data.gyro_cal_z , dt);
+				gyro_filteredz , dt);
+
+
+		float tpa_factor = 1.0f;
+
+		if (radio.throttle > TPA_BREAKPOINT) {
+		    float throttle_range = 2000.0f - TPA_BREAKPOINT;
+		    float current_progress = (radio.throttle - TPA_BREAKPOINT) / throttle_range;
+
+		    // Linearly scale down towards your minimum allowed gain multiplier
+		    tpa_factor = 1.0f - (TPA_RATE * current_progress);
+		}
+
+		// 3. Apply TPA attenuation to your Proportional/Derivative tracking loops
+		float attenuated_roll  = fc.roll.output  * tpa_factor;
+		float attenuated_pitch = fc.pitch.output * tpa_factor;
+
+
 
 		// --- Step 4: Mixer Output ---
-		Mix_Motors_Adjusted(fc.roll.output , fc.pitch.output ,
+		Mix_Motors_Adjusted(attenuated_roll , attenuated_pitch ,
 				fc.yaw.output, current_throttle);
 		  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
 
 	} else {
 		alt_hold_initialized = 0;
-		PID_Reset(&fc.roll, sensor_data.gyro_cal_x);
-		PID_Reset(&fc.pitch, sensor_data.gyro_cal_y);
-		PID_Reset(&fc.yaw, sensor_data.gyro_cal_z);
+		PID_Reset(&fc.roll, gyro_filteredx);
+		PID_Reset(&fc.pitch, gyro_filteredy);
+		PID_Reset(&fc.yaw, gyro_filteredz);
 		if (motor_test == false && esc_calibration == false) {
 			update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF);
 		}

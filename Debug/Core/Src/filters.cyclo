@@ -1,2 +1,5 @@
-../Core/Src/filters.c:12:6:LPF_Init	1
-../Core/Src/filters.c:19:7:LPF_Update	1
+../Core/Src/filters.c:23:6:LPF_Init	1
+../Core/Src/filters.c:30:7:LPF_Update	1
+../Core/Src/filters.c:51:6:Gyro_Notch_Filter_Init	1
+../Core/Src/filters.c:96:6:Update_Notch_Coefficients	3
+../Core/Src/filters.c:126:14:Run_Notch_Filter	1

@@ -743,12 +743,19 @@ void loop_processing(void) {
 
 	static uint32_t current, old;
 	current = HAL_GetTick();
-	if (current - old > 100) {
+	if (current - old > 1) {
 		old = current;
 #define LOG_GYRO
 #ifdef LOG_GYRO
+
 //
-//			usb_print(buffer, size);
+//				uint8_t size = sprintf((char*) buffer, "\r\n%f,%f,%f",
+//						sensor_data.gyro_x,sensor_data.x,
+//						sensor_data.gyro_y,
+//						sensor_data.gyro_z
+//				);
+//				usb_print(buffer, size);
+//
 //			uint8_t size = sprintf((char*) buffer, "\r\n%f,%f,%f,%f,%f,%f",
 //							sensor_data.gyro_x,
 //							sensor_data.gyro_y,
@@ -756,6 +763,8 @@ void loop_processing(void) {
 //							sensor_data.gyro_cal_x,
 //							sensor_data.gyro_cal_y,
 //							sensor_data.gyro_cal_z);
+//			usb_print(buffer, size);
+
 #endif
 
 #ifdef LOG_PID_GAINS

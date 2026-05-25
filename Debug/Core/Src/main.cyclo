@@ -10,5 +10,5 @@
 ../Core/Src/main.c:665:13:MX_DMA_Init	1
 ../Core/Src/main.c:683:13:MX_GPIO_Init	1
 ../Core/Src/main.c:742:6:loop_processing	3
-../Core/Src/main.c:818:6:MPU_Config	1
-../Core/Src/main.c:849:6:Error_Handler	1
+../Core/Src/main.c:827:6:MPU_Config	1
+../Core/Src/main.c:858:6:Error_Handler	1

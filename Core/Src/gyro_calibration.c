@@ -46,10 +46,11 @@ void gyro_calibration_init(void) {
 //	load_gyro_seed_from_flash();
 //	/* Optional: Set initial gyroscope offset */
 
-	start_gyro_bias.GyroBiasX = 0.705f;
-	start_gyro_bias.GyroBiasY = -7.0f;
-	start_gyro_bias.GyroBiasZ = -1.2f;
+	start_gyro_bias.GyroBiasX = -1.41f;
+	start_gyro_bias.GyroBiasY =-4.199f;
+	start_gyro_bias.GyroBiasZ = -1.94f;
     MotionGC_SetCalParams(&start_gyro_bias);
+
 
 	MotionGC_SetKnobs(&knobs);
 

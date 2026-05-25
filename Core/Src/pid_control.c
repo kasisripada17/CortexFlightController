@@ -10,7 +10,7 @@ Flight_Control_t fc = {
 // Format: {kp, ki, kd, kff, integral, last_error, last_input, last_d_term, d_filter_alpha, max_integral, max_output, output, d_cutoff_hz}
 
 		.roll  = {
-		        .kp = 1.0f, .ki = 0.1f, .kd = 0.004f, .kff = 0.15f,
+		        .kp = 0.7f, .ki = 0.2f, .kd = 0.004f, .kff = 0.15f,
 		        .max_i_output = 150.00f, .max_output = 400.0f, .d_cutoff_hz = 20.0f,
 		        .integral = 0.0f, .last_error = 0.0f, .last_input = 0.0f,
 		        .last_d_term = 0.0f, .last_target = 0.0f, .d_filter_alpha = 0.0f, .output = 0.0f
@@ -18,21 +18,21 @@ Flight_Control_t fc = {
 		    .pitch = {
 		        // With the 0.80f mixer fix, KP can align at 1.05f to account purely for lower inertia.
 		        // KD is dropped by 20% to 0.0032f because there is no weight on the nose/tail to dampen.
-		        .kp = 1.05f, .ki = 0.1f, .kd = 0.0032f, .kff = 0.15f,
+		        .kp = 0.75f, .ki = 0.2f, .kd = 0.0026f, .kff = 0.15f,
 		        .max_i_output = 150.00f, .max_output = 400.0f, .d_cutoff_hz = 20.0f,
 		        .integral = 0.0f, .last_error = 0.0f, .last_input = 0.0f,
 		        .last_d_term = 0.0f, .last_target = 0.0f, .d_filter_alpha = 0.0f, .output = 0.0f
 		    },
 		    .yaw   = {
 		        // Tuned to prevent the low-inertia pitch axis from dipping during high-speed spins
-		        .kp = 0.70f, .ki = 0.12f, .kd = 0.0012f, .kff = 0.05f,
+		        .kp = 0.75f, .ki = 0.12f, .kd = 0.0012f, .kff = 0.05f,
 		        .max_i_output = 150.00f, .max_output = 400.0f, .d_cutoff_hz = 20.0f,
 		        .integral = 0.0f, .last_error = 0.0f, .last_input = 0.0f,
 		        .last_d_term = 0.0f, .last_target = 0.0f, .d_filter_alpha = 0.0f, .output = 0.0f
 		    },
     // Outer Angle Loops (The "Brain" for Leveling)
-    .roll_angle_p  = 4.5f,
-    .pitch_angle_p = 4.5f,
+    .roll_angle_p  = 3.5f,
+    .pitch_angle_p = 3.5f,
 
     // Altitude Management
     .target_altitude = 0.0f,
@@ -61,22 +61,24 @@ float PID_Compute(PID_Controller *pid, float target, float actual, float dt) {
 
     // 3. Clean Integral tracking with Dynamic Back-Calculation Anti-Windup
     pid->integral += error * dt;
-
+    // Clamp the accumulator directly using pre-calculated bounds
+            if (pid->integral > pid->max_i_output)  pid->integral = pid->max_i_output;
+            if (pid->integral < -pid->max_i_output) pid->integral = -pid->max_i_output;
     float i_term = pid->ki * pid->integral;
-
-    if (pid->ki > 0.0001f) {
-        if (i_term > pid->max_i_output) {
-            i_term = pid->max_i_output;
-            pid->integral = i_term / pid->ki;
-        }
-        else if (i_term < -pid->max_i_output) {
-            i_term = -pid->max_i_output;
-            pid->integral = i_term / pid->ki;
-        }
-    } else {
-        i_term = 0.0f;
-        pid->integral = 0.0f;
-    }
+//
+//    if (pid->ki > 0.0001f) {
+//        if (i_term > pid->max_i_output) {
+//            i_term = pid->max_i_output;
+//            pid->integral = i_term / pid->ki;
+//        }
+//        else if (i_term < -pid->max_i_output) {
+//            i_term = -pid->max_i_output;
+//            pid->integral = i_term / pid->ki;
+//        }
+//    } else {
+//        i_term = 0.0f;
+//        pid->integral = 0.0f;
+//    }
 
     // 4. Hardened Derivative on Measurement
     float gyro_delta = (actual - pid->last_input) / dt;

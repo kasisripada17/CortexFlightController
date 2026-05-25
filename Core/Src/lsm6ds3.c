@@ -16,10 +16,14 @@
 #include "sensor_fusion.h"
 #include "barometer.h"
 
+float temperature_inital = 0.0f;
 extern float relative_altitude;
 extern float a_global[3];
 extern float alt_fused;
+#define CALIB_SAMPLES (float)3332.0f
 
+#define STATUS_REG 0x1E
+#define TDA_MASK   (1 << 2)
 // variables
 extern SPI_HandleTypeDef hspi1;
 volatile IMU_Data_t sensor_data = { 0 };
@@ -76,44 +80,111 @@ uint8_t IMU_Read_Reg(uint8_t reg_addr) {
 }
 uint8_t IMU_Init(void) {
 
-
-
+	// Initialize secondary sensors first
 	MS5611_Init();
 
-
+	// Verify device connection
 	if (IMU_Read_Reg(0x0F) != 0x69) {
 		return 0;
 	}
 
+	// 1. TRIGGER SOFTWARE RESET IMMEDIATELY
+	// Sets SW_RESET = 1, IF_INC = 1
+	IMU_Write_Reg(0x12, 0x05);
+	HAL_Delay(100);            // Give the digital core ample time to reboot
 
-	    IMU_Write_Reg(0x12, 0x05); // SW Reset
-	    HAL_Delay(100);            // Give it more time to stabilize
+	// 2. SET OUTPUT DATA RATES (Wakes up internal clocks)
+	IMU_Write_Reg(0x10, 0x8E); // Accel: 6.66kHz, 8g
+	IMU_Write_Reg(0x11, 0x84); // Gyro: 6.66kHz, 500dps
 
-	    // 1. SET ODR FIRST (6.66 kHz)
-	    IMU_Write_Reg(0x10, 0x8E); // Accel: 6.66kHz, 8g
+	// 3. DISABLE LOW POWER MODES (Force High-Performance Mode)
+	IMU_Write_Reg(0x15, 0x00); // CTRL6_C: XL_HM_MODE = 0
+	IMU_Write_Reg(0x16, 0x00); // CTRL7_G: G_HM_MODE = 0
 
-	    IMU_Write_Reg(0x11, 0x84); // Gyro: 6.66kHz, 500dps
+	// 4. ENABLE BLOCK DATA UPDATE & AUTO-INCREMENT
+	// Safe to do now—guarantees synchronized multi-byte reads for data registers
+	IMU_Write_Reg(0x12, 0x44); // CTRL3_C: BDU = 1, IF_INC = 1
+	IMU_Write_Reg(0x13, 0x00); // CTRL4_C: Default
 
-	    // 2. DISABLE ALL LOW POWER MODES (Crucial)
-	    // CTRL6_C (0x15): Bit 4 = 0 (XL_HM_MODE = High Perf)
-	    // Also, Bits 0-2 (FTYPE) should be 000 for max bandwidth.
-	    IMU_Write_Reg(0x15, 0x00);
+	// 5. INTERRUPT CONFIGURATION
+	// Direct Gyro Data-Ready (DRDY) to pulse INT1 pin at 6.66kHz
+	IMU_Write_Reg(0x0D, 0x02);
 
-	    // CTRL7_G (0x16): Bit 7 = 0 (G_HM_MODE = High Perf)
-	    // Bit 2 = 1 (Rounding disabled / High Performance force)
-	    // IMPORTANT: Set this to 0x00 or 0x04.
-	    IMU_Write_Reg(0x16, 0x00);
+	// 6. POLL FOR INITIAL TEMPERATURE BASELINE
+	// Fully configured state guarantees clean, BDU-protected data
+//	uint8_t temp_buf[2];
+//	while (1) {
+//		uint8_t status_val = 0;
+//		status_val = IMU_Read_Reg(STATUS_REG);
+//
+//		if (status_val & TDA_MASK) {
+//			temp_buf[0] = IMU_Read_Reg(0x20); // OUT_TEMP_L
+//			temp_buf[1] = IMU_Read_Reg(0x21); // OUT_TEMP_H
+//			break;
+//		}
+//	}
+//
+//	// Process raw temperature bytes safely (16 LSB/°C sensitivity centered at 25°C)
+//	int16_t raw_temp = (int16_t) ((temp_buf[1] << 8) | temp_buf[0]);
+//	temperature_inital = 25.0f + ((float) raw_temp / 16.0f);
 
-	    // 3. ENABLE BLOCK DATA UPDATE
-	    IMU_Write_Reg(0x12, 0x44);
-	    IMU_Write_Reg(0x13, 0x00);
-
-	    // 4. INTERRUPT CONFIG
-	    // Switch INT1_CTRL back to 0x02 (Gyro DRDY).
-	    // Now that HM_MODE is forced, it should pulse at 6.66kHz.
-	    IMU_Write_Reg(0x0D, 0x02);
 	return 1;
 }
+//uint8_t IMU_Init(void) {
+//
+//	MS5611_Init();
+//
+//	if (IMU_Read_Reg(0x0F) != 0x69) {
+//		return 0;
+//	}
+//
+//	IMU_Write_Reg(0x12, 0x05); // SW Reset
+//	HAL_Delay(100);            // Give it more time to stabilize
+//
+//	// 1. SET ODR FIRST (6.66 kHz)
+//	IMU_Write_Reg(0x10, 0x8E); // Accel: 6.66kHz, 8g
+//
+//	IMU_Write_Reg(0x11, 0x84); // Gyro: 6.66kHz, 500dps
+//	uint8_t temp_buf[2];
+//
+//			while (1) {
+//				uint8_t status_val = 0;
+//				status_val = IMU_Read_Reg(STATUS_REG);
+//
+//				if (status_val & TDA_MASK) {
+//					temp_buf[0] = IMU_Read_Reg(0x20);
+//					temp_buf[1] = IMU_Read_Reg(0x21);
+//					break;
+//				}
+//			}
+//	// 2. DISABLE ALL LOW POWER MODES (Crucial)
+//	// CTRL6_C (0x15): Bit 4 = 0 (XL_HM_MODE = High Perf)
+//	// Also, Bits 0-2 (FTYPE) should be 000 for max bandwidth.
+//	IMU_Write_Reg(0x15, 0x00);
+//
+//	// CTRL7_G (0x16): Bit 7 = 0 (G_HM_MODE = High Perf)
+//	// Bit 2 = 1 (Rounding disabled / High Performance force)
+//	// IMPORTANT: Set this to 0x00 or 0x04.
+//	IMU_Write_Reg(0x16, 0x00);
+//
+//	// 3. ENABLE BLOCK DATA UPDATE
+//	IMU_Write_Reg(0x12, 0x44);
+//	IMU_Write_Reg(0x13, 0x00);
+//
+//
+//		int16_t raw_temp = (int16_t) ((temp_buf[1] << 8) | temp_buf[0]);
+//
+//	// 16 LSB/°C sensitivity centered at 25°C
+//	temperature_inital = 25.0f + ((float) raw_temp / 16.0f);
+//
+//	// 4. INTERRUPT CONFIG
+//	// Switch INT1_CTRL back to 0x02 (Gyro DRDY).
+//	// Now that HM_MODE is forced, it should pulse at 6.66kHz.
+//	IMU_Write_Reg(0x0D, 0x02);
+//	// Read registers 0x20 and 0x21 over SPI
+//
+//	return 1;
+//}
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 	if (GPIO_Pin == GPIO_PIN_4) { // PC4 triggered
@@ -152,9 +223,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		accy = (int16_t) ((buffer[9] << 8) | buffer[8]);
 		accz = (int16_t) ((buffer[11] << 8) | buffer[10]);
 
-
-
-
 		sensor_data.gyro_x = ((float) (angx * 0.0175f));
 		sensor_data.gyro_y = ((float) (angy * 0.0175f));
 		sensor_data.gyro_z = ((float) (angz * 0.0175f));
@@ -164,98 +232,116 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		sensor_data.acc_y = ((float) (accy * 0.000244f));
 		sensor_data.acc_z = ((float) (accz * 0.000244f));
 
-
-		gyro_calibration_routine();
-
+		//gyro_calibration_routine();
 
 		static float acc_bias[3];
 		static float gyro_bias[3];
 
 		static bool acc_calib_done = false;
 		static float prevx = 0.0f, prevy = 0.0f, prevz = 0.0f;
-#define CALIB_SAMPLES (float)1000.0f
 		if (!acc_calib_done) {
-			if (acc_calib_counter < (int)CALIB_SAMPLES) {
+			static uint32_t skip = 0;
+			if (skip == 3332) {
 
-				if (fabsf(sensor_data.acc_x - prevx) > 0.1f
-						|| fabsf(sensor_data.acc_y - prevy) > 0.1f) {
+				if (acc_calib_counter <= (int) CALIB_SAMPLES) {
 
-					acc_bias[0] = 0.0f;
-					acc_bias[1] = 0.0f;
-					acc_bias[2] = 0.0f;
-					gyro_bias[0] = 0.0f;
-					gyro_bias[1] = 0.0f;
-					gyro_bias[2] = 0.0f;
+					if (fabsf(sensor_data.acc_x - prevx) > 0.1f
+							|| fabsf(sensor_data.acc_y - prevy) > 0.1f) {
 
-					acc_calib_counter = 0;
+						acc_bias[0] = 0.0f;
+						acc_bias[1] = 0.0f;
+						acc_bias[2] = 0.0f;
+						gyro_bias[0] = 0.0f;
+						gyro_bias[1] = 0.0f;
+						gyro_bias[2] = 0.0f;
+
+						acc_calib_counter = 0;
+					} else {
+						acc_bias[0] += sensor_data.acc_x;
+						acc_bias[1] += sensor_data.acc_y;
+						acc_bias[2] += sensor_data.acc_z; // Accumulate Z
+						gyro_bias[0] += sensor_data.gyro_x;
+						gyro_bias[1] += sensor_data.gyro_y;
+						gyro_bias[2] += sensor_data.gyro_z; // Accumulate Z
+						acc_calib_counter++;
+					}
 				} else {
-					acc_bias[0] += sensor_data.acc_x;
-					acc_bias[1] += sensor_data.acc_y;
-					acc_bias[2] += sensor_data.acc_z; // Accumulate Z
-					gyro_bias[0] += sensor_data.gyro_x;
-					gyro_bias[1] += sensor_data.gyro_y;
-					gyro_bias[2] += sensor_data.gyro_z; // Accumulate Z
-					acc_calib_counter++;
+					acc_bias[0] /= CALIB_SAMPLES;
+					acc_bias[1] /= CALIB_SAMPLES;
+					acc_bias[2] = (acc_bias[2] / CALIB_SAMPLES ) - 1.0f;
+					gyro_bias[0] /= CALIB_SAMPLES;
+					gyro_bias[1] /= CALIB_SAMPLES;
+					gyro_bias[2] /= CALIB_SAMPLES;
+
+					acc_calib_done = true;
 				}
 			} else {
-				acc_bias[0] /= CALIB_SAMPLES;
-				acc_bias[1] /= CALIB_SAMPLES;
-				acc_bias[2] = (acc_bias[2] /CALIB_SAMPLES) - 1.0f;
-				gyro_bias[0] /= CALIB_SAMPLES;
-				gyro_bias[1] /= CALIB_SAMPLES;
-				gyro_bias[2] /= CALIB_SAMPLES;
+				skip++;
 
-				acc_calib_done = true;
 			}
 		}
 		if (acc_calib_done) {
-			sensor_data.acc_x = ((float) (sensor_data.acc_x - acc_bias[0]));
-			sensor_data.acc_y = ((float) (sensor_data.acc_y - acc_bias[1]));
-			sensor_data.acc_z = ((float) (sensor_data.acc_z - acc_bias[2]));
-//			sensor_data.gyro_cal_x =  ((float) (sensor_data.gyro_x - gyro_bias[0]));
-//			sensor_data.gyro_cal_y =  ((float) (sensor_data.gyro_y - gyro_bias[1]));
-//			sensor_data.gyro_cal_z =  ((float) (sensor_data.gyro_z - gyro_bias[2]));
+//			sensor_data.acc_x = ((float) (sensor_data.acc_x - acc_bias[0]));
+//			sensor_data.acc_y = ((float) (sensor_data.acc_y - acc_bias[1]));
+//			sensor_data.acc_z = ((float) (sensor_data.acc_z - acc_bias[2]));
+			sensor_data.gyro_cal_x =
+					((float) (sensor_data.gyro_x - gyro_bias[0]));
+			sensor_data.gyro_cal_y =
+					((float) (sensor_data.gyro_y - gyro_bias[1]));
+			sensor_data.gyro_cal_z =
+					((float) (sensor_data.gyro_z - gyro_bias[2]));
 
+		}
+		else {
+			sensor_data.gyro_cal_x = sensor_data.gyro_x;
+			sensor_data.gyro_cal_y = sensor_data.gyro_y;
+			sensor_data.gyro_cal_z = sensor_data.gyro_z;
 		}
 		prevx = sensor_data.acc_x;
 		prevy = sensor_data.acc_y;
 		prevz = sensor_data.acc_z;
 
+//		uint8_t size = sprintf((char*) buffer, "\r\n%f,%f,%f",
+//				sensor_data.gyro_x,
+//				sensor_data.gyro_y,
+//				sensor_data.gyro_z
+//		);
+//		usb_print(buffer, size);
 
 		motion_fx_update();
 
 		flight_control();
 
 		// 2. RUN BARO STATE MACHINE (Non-blocking)
-		switch (currentBaroState) {
-		case BARO_STATE_IDLE:
-			MS5611_Start_Pressure_Conv(); // Send command, pull D15 HIGH
-			lastBaroTime = HAL_GetTick();
-			currentBaroState = BARO_STATE_WAIT_PRES;
-			break;
-
-		case BARO_STATE_WAIT_PRES:
-			if (HAL_GetTick() - lastBaroTime >= 10) { // Check if 10ms passed
-				D1 = MS5611_Read_ADC_Result();    // Pull D15 LOW, read, HIGH
-				MS5611_Start_Temp_Conv();
-				lastBaroTime = HAL_GetTick();
-				currentBaroState = BARO_STATE_WAIT_TEMP;
-			}
-			break;
-
-		case BARO_STATE_WAIT_TEMP:
-			if (HAL_GetTick() - lastBaroTime >= 10) {
-				D2 = MS5611_Read_ADC_Result();
-				Calculate_Final_Altitude(D1, D2);
-				float dt = DT;
-				alt_fused = update_altitude_fusion(relative_altitude,
-						a_global[2], dt);
-				//update_tuning_from_radio();
-
-				currentBaroState = BARO_STATE_IDLE; // Start over
-			}
-			break;
-		}
+//		switch (currentBaroState) {
+//		case BARO_STATE_IDLE:
+//			MS5611_Start_Pressure_Conv(); // Send command, pull D15 HIGH
+//			lastBaroTime = HAL_GetTick();
+//			currentBaroState = BARO_STATE_WAIT_PRES;
+//			break;
+//
+//		case BARO_STATE_WAIT_PRES:
+//			if (HAL_GetTick() - lastBaroTime >= 10) { // Check if 10ms passed
+//				D1 = MS5611_Read_ADC_Result();    // Pull D15 LOW, read, HIGH
+//				MS5611_Start_Temp_Conv();
+//				lastBaroTime = HAL_GetTick();
+//				currentBaroState = BARO_STATE_WAIT_TEMP;
+//			}
+//			break;
+//
+//		case BARO_STATE_WAIT_TEMP:
+//			if (HAL_GetTick() - lastBaroTime >= 10) {
+//				D2 = MS5611_Read_ADC_Result();
+//				Calculate_Final_Altitude(D1, D2);
+//				float dt = DT;
+//				alt_fused = update_altitude_fusion(relative_altitude,
+//						a_global[2], dt);
+//				update_tuning_from_radio();
+//
+//				currentBaroState = BARO_STATE_IDLE; // Start over
+//			}
+//			break;
+//		}
 
 	}
 

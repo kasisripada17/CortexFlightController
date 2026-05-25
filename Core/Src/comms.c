@@ -121,17 +121,20 @@ void update_tuning_from_radio(void) {
 
 	i_gain = i_gain * 1.0f;   // Range: 0.0 to 2.0
 
-	d_gain = d_gain * 0.05f;   // Range: 0.0 to 0.1
+	d_gain = d_gain * 0.1f;   // Range: 0.0 to 0.1
 
-if(p_gain<0.1)
+if(p_gain<0.4)
 {
-	p_gain = 0.1f;
+	p_gain = 0.4f;
 }
 if(i_gain<0.001f)
 {
 	i_gain = 0.001;
 }
-
+if(d_gain<0.0001f)
+{
+	d_gain = 0.0001;
+}
 
 	fc.roll.kp = p_gain;
 	fc.pitch.kp = p_gain;

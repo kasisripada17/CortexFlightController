@@ -27,8 +27,7 @@ MFX_knobs_t iKnobs;
 
 
 
-
-
+extern float gyro_filteredx , gyro_filteredy , gyro_filteredz;
 
 
 
@@ -58,6 +57,13 @@ float roll, pitch, yaw;
 
 
 
+extern BiquadNotch gyro_notch_x;
+extern BiquadNotch gyro_notch_y;
+extern BiquadNotch gyro_notch_z;
+
+extern BiquadNotch acc_notch_x;
+extern BiquadNotch acc_notch_y;
+extern BiquadNotch acc_notch_z;
 
 
 LPF_Filter gyroFilterX, gyroFilterY, gyroFilterZ;
@@ -153,16 +159,21 @@ void motion_fx_update(void) {
 		init = 0;
 #ifdef GYRO_SW_LPF
 
-		LPF_Init(&gyroFilterX, 100.0f, LOOP_FREQ);
-		LPF_Init(&gyroFilterY, 100.0f, LOOP_FREQ);
-		LPF_Init(&gyroFilterZ, 100.0f,LOOP_FREQ);
+		LPF_Init(&gyroFilterX, 50.0f, LOOP_FREQ);
+		LPF_Init(&gyroFilterY, 50.0f, LOOP_FREQ);
+		LPF_Init(&gyroFilterZ, 50.0f,LOOP_FREQ);
 #endif
 
 #ifdef ACC_SW_LPF
-		LPF_Init(&accFilterX, 50.0f, LOOP_FREQ);
-		LPF_Init(&accFilterY, 50.0f, LOOP_FREQ);
-		LPF_Init(&accFilterZ, 50.0f, LOOP_FREQ);
+		LPF_Init(&accFilterX, 20.0f, LOOP_FREQ);
+		LPF_Init(&accFilterY, 20.0f, LOOP_FREQ);
+		LPF_Init(&accFilterZ, 20.0f, LOOP_FREQ);
 #endif
+
+
+		Gyro_Notch_Filter_Init();
+
+
 		Mahony_Init(&imu, LOOP_FREQ, 2.5f, 0.0f);
 	}
 
@@ -178,6 +189,13 @@ void motion_fx_update(void) {
 	angx = LPF_Update(&gyroFilterX, sensor_data.gyro_cal_x);
 	angy = LPF_Update(&gyroFilterY, sensor_data.gyro_cal_y);
 	angz = LPF_Update(&gyroFilterZ, sensor_data.gyro_cal_z);
+
+//				uint8_t size = sprintf((char*) buffer, "\r\n%f,%f,%f,%f,%f,%f",
+//								sensor_data.gyro_cal_x,
+//								sensor_data.gyro_cal_y,
+//								sensor_data.gyro_cal_z,angx,angy,angz);
+//				usb_print(buffer, size);
+
 #else
 	angx = sensor_data.gyro_cal_x; // Pass raw data if LPF is disabled
 	angy = sensor_data.gyro_cal_y; // Pass raw data if LPF is disabled
@@ -195,10 +213,26 @@ void motion_fx_update(void) {
 	accy = sensor_data.acc_y;
 	accz = sensor_data.acc_z;
 #endif
+
+
+
+	// Run through the dynamic notch processors
+	 gyro_filteredx = Run_Notch_Filter(&gyro_notch_x, angx);
+	 gyro_filteredy = Run_Notch_Filter(&gyro_notch_y, angy);
+	 gyro_filteredz = Run_Notch_Filter(&gyro_notch_z, angz);
+
+
+	// Run through the dynamic notch processors
+	float ax_filtered = Run_Notch_Filter(&acc_notch_x, accx);
+	float ay_filtered = Run_Notch_Filter(&acc_notch_y, accy);
+	float az_filtered = Run_Notch_Filter(&acc_notch_z, accz);
+
+
+
+
 #ifdef MAHONY_AHRS
-   // // Update filter
-   // Mahony_UpdateIMU(&imu,  angx, angy, angz, -accx,-accy, accz);
-	Mahony_UpdateIMU(&imu,  angx, angy, angz, accx,accy, accz);
+    // Update filter
+	Mahony_UpdateIMU(&imu,  gyro_filteredx, gyro_filteredy, gyro_filteredz, ax_filtered,ay_filtered, az_filtered);
 
     Mahony_GetEulerAngles(&imu, &roll, &pitch, &yaw);
 
@@ -232,9 +266,9 @@ void motion_fx_update(void) {
 
 //
 //
-//	uint8_t size = sprintf((char*) buffer, "\r\n%f,%f",
-//			roll,pitch);
-//	usb_print(buffer, size);
+	uint8_t size = sprintf((char*) buffer, "\r\n%f,%f",
+			roll,pitch);
+	usb_print(buffer, size);
 //
 
 

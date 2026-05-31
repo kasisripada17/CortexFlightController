@@ -117,33 +117,25 @@ void update_tuning_from_radio(void) {
 
 
 
-	p_gain = p_gain * 2.0f;  // Range: 0.0 to 10.0
+	p_gain = p_gain * 500.0f;  // Range: 0.0 to 10.0
 
-	i_gain = i_gain * 1.0f;   // Range: 0.0 to 2.0
+	i_gain = i_gain * 50.0f;   // Range: 0.0 to 2.0
 
-	d_gain = d_gain * 0.1f;   // Range: 0.0 to 0.1
+	d_gain = d_gain * 5.0f;   // Range: 0.0 to 0.1
 
-if(p_gain<0.4)
-{
-	p_gain = 0.4f;
-}
-if(i_gain<0.001f)
-{
-	i_gain = 0.001;
-}
-if(d_gain<0.0001f)
-{
-	d_gain = 0.0001;
-}
+//	fc.roll.kp = p_gain;
+//	fc.pitch.kp = p_gain;
+//
+//	fc.roll.ki = i_gain;
+//	fc.pitch.ki = i_gain;
+//
+//	fc.roll.kd = d_gain;
+//	fc.pitch.kd = d_gain;
 
-	fc.roll.kp = p_gain;
-	fc.pitch.kp = p_gain;
 
-	fc.roll.ki = i_gain;
-	fc.pitch.ki = i_gain;
+		fc.yaw.kp = p_gain;
 
-	fc.roll.kd = d_gain;
-	fc.pitch.kd = d_gain;
-
+		fc.yaw.ki = i_gain;
+	//
 
 }

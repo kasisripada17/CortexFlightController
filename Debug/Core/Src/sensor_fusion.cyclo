@@ -1,8 +1,7 @@
-../Core/Src/sensor_fusion.c:155:6:motion_fx_update	2
-../Core/Src/sensor_fusion.c:279:6:convert_local_to_globalframe	1
-../Core/Src/sensor_fusion.c:306:7:update_altitude_fusion	1
-../Core/Src/sensor_fusion.c:333:14:invSqrt	1
-../Core/Src/sensor_fusion.c:344:6:Mahony_Init	1
-../Core/Src/sensor_fusion.c:357:6:Mahony_UpdateIMU	5
-../Core/Src/sensor_fusion.c:429:6:Mahony_GetEulerAngles	1
-../Core/Src/sensor_fusion.c:451:6:Mahony_GetQuaternion	1
+../Core/Src/sensor_fusion.c:139:6:sensor_fusion_update	2
+../Core/Src/sensor_fusion.c:219:14:invSqrt	1
+../Core/Src/sensor_fusion.c:230:6:Mahony_Init	1
+../Core/Src/sensor_fusion.c:243:6:Mahony_UpdateIMU	5
+../Core/Src/sensor_fusion.c:323:6:Mahony_GetEulerAngles	3
+../Core/Src/sensor_fusion.c:348:6:Mahony_GetQuaternion	1
+../Core/Src/sensor_fusion.c:356:6:calculate_linear_acceleration	1

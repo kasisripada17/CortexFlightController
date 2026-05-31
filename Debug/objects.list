@@ -6,6 +6,7 @@
 "./Core/Src/gyro_calibration.o"
 "./Core/Src/lsm6ds3.o"
 "./Core/Src/main.o"
+"./Core/Src/motion_ac_manager.o"
 "./Core/Src/motors.o"
 "./Core/Src/pid_control.o"
 "./Core/Src/print.o"

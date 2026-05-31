@@ -26,6 +26,9 @@ typedef struct {
     float acc_x, acc_y, acc_z;
     float acc_cal_x, acc_cal_y, acc_cal_z;
     float roll,pitch,yaw;
+    float acc_earth_x,acc_earth_y,acc_earth_z;
+    float fused_alt;
+    float fused_vel;
 } IMU_Data_t;
 
 typedef struct {
@@ -52,7 +55,6 @@ typedef enum {
 void IMU_Write_Reg(uint8_t reg, uint8_t value) ;
 uint8_t IMU_Read_Reg(uint8_t reg_addr) ;
 uint8_t IMU_Init(void) ;
-float update_altitude_fusion(float baro_alt, float acc_z_earth, float dt) ;
 
 
 

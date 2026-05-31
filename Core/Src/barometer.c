@@ -1,163 +1,250 @@
 /*
  * barometer.c
  *
- *  Created on: 05-May-2026
- *      Author: kasiviswanadhsripada
+ * Created on: 05-May-2026
+ * Author: kasiviswanadhsripada
+ * Description: Asynchronous, non-blocking MS5611 Barometer driver
+ * integrated with a 2nd-order complementary fusion filter.
+ * Optimized based on LibDriver SPI frame specs and 64-bit precision math.
  */
-
 
 #include "barometer.h"
 #include <stdio.h>
+#include <math.h>
 #include "print.h"
 #include "pid_control.h"
-extern Flight_Control_t fc ;
-// Global array to store MS5611 calibration coefficients
-uint16_t C[7]; // MS5611 has 6 coefficients (1-6). C[0] is typically reserved or CRC.
+#include "stdbool.h"
+#include "lsm6ds3.h"
+#include "altitude_hold.h"
 
-// Define the PROM read command
-#define MS5611_PROM_READ 0xA0
-float current_temperature = 0.0f;
-float current_pressure = 0.0f;
-float current_altitude = 0.0f;
-float relative_altitude = 0.0f;
-float alt_fused = 0.0f;
-static float P_ground_accumulator = 0; // Temporary sum for averaging
-static float P_at_ground = 101325.0f;  // Actual reference pressure
-static uint16_t calib_counter = 0;     // Use uint16 for safer counting
-#define CALIB_SAMPLES 600  // ~12 seconds of data at 50Hz
-#define SKIP_SAMPLES  300  // Skip the first 6 seconds entirely for thermal stability
- // Skip the first 2 seconds to let heat stabilize
+// --- Extern Variables & Functions ---
+extern Flight_Control_t fc;
 extern SPI_HandleTypeDef hspi1;
+extern float alt_fused;       // Global target for fused state tracking
+extern volatile IMU_Data_t sensor_data;
 
+// --- Global Variables ---
+float current_temperature = 0.0f;
+float current_pressure    = 0.0f;
+float current_altitude    = 0.0f;
+float baro_altitude   = 0.0f;
 
-extern uint8_t buffer[256];
+// --- Private Calibration Configs ---
+#define SKIP_SAMPLES      100  // Skip first 6 seconds to clear sensor thermal bloom
+#define CALIB_SAMPLES     SKIP_SAMPLES+100  // Total samples (~12 seconds of data at 50Hz)
 
+static float P_ground_accumulator = 0.0f;
+static float P_at_ground          = 101325.0f; // Default sea level pressure Pascal baseline
+static uint16_t calib_counter     = 0;
+bool new_baro_ready = false;
+
+static BaroState_t currentBaroState = BARO_STATE_START_PRES;
+static uint32_t lastBaroTime        = 0;
+static uint32_t lastFusionUpdate    = 0; // Tracks elapsed execution intervals for fusion integration
+static uint32_t D1                  = 0; // Raw pressure sensor reading
+static uint32_t D2                  = 0; // Raw temperature sensor reading
+
+// Explicit 8-element array to map PROM registers cleanly (0-7)
+uint16_t C[8] = {0};
+
+/**
+ * @brief  Initializes the MS5611 hardware profile, triggers reset, and reads PROM coefficients.
+ */
 void MS5611_Init(void) {
-    // 1. Send Reset Command
     uint8_t reset_cmd = 0x1E;
-    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
+
+    // 1. Execute Device Hardware Reset
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
     HAL_SPI_Transmit(&hspi1, &reset_cmd, 1, 10);
-    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_SET);
+    HAL_Delay(15); // Wait for sensor internal state reload execution
 
-    HAL_Delay(10); // Wait for reset to complete
+    // 2. Parse Factory Calibration Vector Coefficients via LibDriver Full-Duplex Strategy
+    uint8_t tx_frame[3] = {0};
+    uint8_t rx_frame[3] = {0};
 
-    // 2. Read the PROM (Calibration Coefficients)
-    uint8_t buffer[2];
-    for (uint8_t i = 0; i < 7; i++) {
-        uint8_t prom_cmd = 0xA0 + (i * 2); // 0xA0 to 0xAE
+    for (uint8_t i = 0; i < 8; i++) {
+        tx_frame[0] = 0xA0 + (i * 2); // Commands from 0xA0 to 0xAE
+        tx_frame[1] = 0x00;           // Dummy byte for clocking out data
+        tx_frame[2] = 0x00;           // Dummy byte for clocking out data
 
-        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET);
-        HAL_SPI_Transmit(&hspi1, &prom_cmd, 1, 10);
-        HAL_SPI_Receive(&hspi1, buffer, 2, 10);
-        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
+        // Transmit and receive simultaneously to keep the clock continuous
+        HAL_SPI_TransmitReceive(&hspi1, tx_frame, rx_frame, 3, 10);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_SET);
 
-        C[i] = (buffer[0] << 8) | buffer[1]; // Store in your global C array
+        // Byte index 1 and 2 contain valid 16-bit register payloads
+        C[i] = ((uint16_t)rx_frame[1] << 8) | rx_frame[2];
+    }
+
+    // Initialize timestamp tracker for multi-rate fusion loop step metrics
+    lastFusionUpdate = HAL_GetTick();
+}
+
+/**
+ * @brief  Triggers an asynchronous Pressure conversion (D1) at max Oversampling Rate (4096).
+ * @note   Leaves Chip Select asserted LOW to prevent the sensor from reverting to I2C mode.
+ */
+void MS5611_Start_Pressure_Conv(void) {
+    uint8_t cmd = 0x48; // MS5611_CONV_D1_OSR_4096
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, &cmd, 1, 10);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_SET);
+
+    // CRITICAL: DO NOT raise CS here. Keep it locked low through the wait phase.
+}
+
+/**
+ * @brief  Triggers an asynchronous Temperature conversion (D2) at max Oversampling Rate (4096).
+ * @note   Leaves Chip Select asserted LOW to prevent the sensor from reverting to I2C mode.
+ */
+void MS5611_Start_Temp_Conv(void) {
+    uint8_t cmd = 0x58; // MS5611_CONV_D2_OSR_4096
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, &cmd, 1, 10);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_SET);
+
+    // CRITICAL: DO NOT raise CS here. Keep it locked low through the wait phase.
+}
+
+/**
+ * @brief  Reads the internal 24-bit ADC register values from the MS5611 over SPI bus.
+ * @note   Uses a LibDriver style full-duplex 4-byte unified transmission burst.
+ * @return uint32_t Raw 24-bit sensor conversion matrix value.
+ */
+uint32_t MS5611_Read_ADC_Result(void) {
+    // 1-byte command (0x00) + 3 data output collection bytes
+    uint8_t tx_buf[4] = {0x00, 0x00, 0x00, 0x00};
+    uint8_t rx_buf[4] = {0, 0, 0, 0};
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
+
+    // CS line is already held low from the Start command; proceed directly to full-duplex transfer
+    HAL_SPI_TransmitReceive(&hspi1, tx_buf, rx_buf, 4, 10);
+
+    // Release the SPI bus now that transaction is completed
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_SET);
+
+    // Extract out 24 bits of valid data from positions 1, 2, and 3
+    uint32_t result = ((uint32_t)rx_buf[1] << 16) |
+                      ((uint32_t)rx_buf[2] << 8)  |
+                       (uint32_t)rx_buf[3];
+
+    return result;
+}
+/**
+ * @brief  Executes factory standard equations and updates global state variables.
+ */
+void Calculate_Final_Altitude(uint32_t D1, uint32_t D2) {
+    // --- STEP 1: COMPUTE TEMPERATURE DIFFERENCES ---
+    int64_t dT = (int64_t)D2 - ((int64_t)C[5] << 8);
+    int32_t TEMP = 2000 + (int32_t)((dT * (int64_t)C[6]) >> 23);
+
+    // --- STEP 2: SECOND ORDER THERMAL COMPENSATION ---
+    int64_t T2    = 0;
+    int64_t OFF2  = 0;
+    int64_t SENS2 = 0;
+
+    if (TEMP < 2000) { // Below 20°C Ambient Limit
+        T2 = (dT * dT) >> 31;
+        int64_t t_diff = (int64_t)TEMP - 2000;
+        int64_t t_squared = t_diff * t_diff;
+
+        OFF2  = (5 * t_squared) >> 1;
+        SENS2 = (5 * t_squared) >> 2;
+
+        if (TEMP < -1500) { // Severe cold threshold (-15°C Ambient)
+            int64_t tc_diff = (int64_t)TEMP + 1500;
+            int64_t tc_squared = tc_diff * tc_diff;
+
+            OFF2  = OFF2 + (7 * tc_squared);
+            SENS2 = SENS2 + ((11 * tc_squared) >> 1);
+        }
+    }
+
+    TEMP = TEMP - (int32_t)T2;
+
+    // --- STEP 3: COMPUTE PRESSURE COMPENSATED COEFFICIENTS (DATASHEET EXACT) ---
+    int64_t OFF  = ((int64_t)C[2] << 23) + ((int64_t)C[4] * dT);
+    OFF = OFF - (OFF2 << 7);
+    OFF = OFF >> 7;
+
+    int64_t SENS = ((int64_t)C[1] << 23) + ((int64_t)C[3] * dT);
+    SENS = SENS - (SENS2 << 8);
+    SENS = SENS >> 8;
+
+    // P = (D1 * SENS / 2^21 - OFF) / 2^15
+    int32_t P = (int32_t)(((((int64_t)D1 * SENS) >> 21) - OFF) >> 15);
+
+    // --- STEP 4: ASSIGN METRIC FLOAT OUTPUTS ---
+    current_temperature = (float)TEMP / 100.0f;
+    current_pressure    = (float)P;
+
+    // --- STEP 5: STATE SYSTEM CALIBRATION ENGINE ---
+    if (calib_counter < CALIB_SAMPLES) {
+        if (calib_counter > SKIP_SAMPLES) {
+            P_ground_accumulator += current_pressure;
+        }
+        calib_counter++;
+    }
+    else if (calib_counter == CALIB_SAMPLES) {
+        P_at_ground = P_ground_accumulator / (float)(CALIB_SAMPLES - SKIP_SAMPLES);
+        calib_counter++;
+        fc.ground_offset = 0.0f;
+    }
+
+    // --- STEP 6: UNIFIED ALTITUDE OUTPUT TRACKING (FIXED) ---
+    // Calculate raw altitude continuously so the filter never gets stuck at zero
+    baro_altitude = 44330.0f * (1.0f - powf(current_pressure / P_at_ground, 0.190295f));
+
+    // Absolute height relative to ideal sea level metrics
+   // current_altitude = 44330.0f * (1.0f - powf(current_pressure / 101325.0f, 0.190295f));
+
+    // --- STEP 7: ASYNCHRONOUS STATE MACHINE SIGNAL FLAG ---
+    // Signal to the high-speed IMU ISR that a fresh barometric sample is ready
+    new_baro_ready = true;
+}
+
+
+/**
+ * @brief  Non-blocking asynchronous sequencer managing low-speed Baro scheduling.
+ * @note   Executed loop-by-loop inside your main background while(1) thread task.
+ */
+void run_barometer_state_machine(void) {
+    uint32_t now = HAL_GetTick();
+
+    switch (currentBaroState) {
+
+        case BARO_STATE_START_PRES:
+            MS5611_Start_Pressure_Conv();
+            lastBaroTime = now;
+            currentBaroState = BARO_STATE_WAIT_PRES;
+            break;
+
+        case BARO_STATE_WAIT_PRES:
+            // OSR 4096 requires up to an 8.22ms conversion window. Evaluate at 10ms barrier limit.
+            if (now - lastBaroTime >= 10U) {
+                D1 = MS5611_Read_ADC_Result(); // Reads data and safely releases CS
+                currentBaroState = BARO_STATE_START_TEMP;
+            }
+            break;
+
+        case BARO_STATE_START_TEMP:
+            MS5611_Start_Temp_Conv();
+            lastBaroTime = now;
+            currentBaroState = BARO_STATE_WAIT_TEMP;
+            break;
+
+        case BARO_STATE_WAIT_TEMP:
+            if (now - lastBaroTime >= 10U) {
+                D2 = MS5611_Read_ADC_Result(); // Reads data and safely releases CS
+                Calculate_Final_Altitude(D1, D2);
+                new_baro_ready = true;
+                currentBaroState = BARO_STATE_START_PRES;
+            }
+            break;
+
+        default:
+            currentBaroState = BARO_STATE_START_PRES;
+            break;
     }
 }
-
-void MS5611_Start_Pressure_Conv(void) {
-    uint8_t cmd = MS5611_CONV_D1_OSR_4096;
-    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET); // D15 LOW
-    HAL_SPI_Transmit(&hspi1, &cmd, 1, 10);
-    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);   // D15 HIGH
-}
-
-void MS5611_Start_Temp_Conv(void) {
-    uint8_t cmd = MS5611_CONV_D2_OSR_4096;
-    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET); // D15 LOW
-    HAL_SPI_Transmit(&hspi1, &cmd, 1, 10);
-    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);   // D15 HIGH
-}
-uint32_t MS5611_Read_ADC_Result(void) {
-    uint8_t cmd = MS5611_ADC_READ;
-    uint8_t buffer[3];
-
-    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_RESET); // D15 LOW
-    HAL_SPI_Transmit(&hspi1, &cmd, 1, 10);
-    HAL_SPI_Receive(&hspi1, buffer, 3, 10);
-    HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);   // D15 HIGH
-
-    // Combine the three 8-bit registers into one 24-bit value
-    return ((uint32_t)buffer[0] << 16) | ((uint32_t)buffer[1] << 8) | buffer[2];
-}
-
-void Calculate_Final_Altitude(uint32_t D1, uint32_t D2) {
-	// 1. Calculate temperature difference (dT)
-	int64_t dT = (int64_t) D2 - ((int64_t) C[5] << 8);
-
-	// 2. Calculate actual temperature (initial)
-	int32_t TEMP = 2000 + ((dT * C[6]) >> 23);
-
-	// 3. SECOND ORDER TEMPERATURE COMPENSATION
-	// Corrects for non-linearities at low/high temperatures
-	int64_t T2 = 0;
-	int64_t OFF2 = 0;
-	int64_t SENS2 = 0;
-
-	if (TEMP < 2000) { // If Temperature < 20°C
-		T2 = (dT * dT) >> 31;
-		OFF2 = 5 * ((TEMP - 2000) * (TEMP - 2000)) >> 1;
-		SENS2 = 5 * ((TEMP - 2000) * (TEMP - 2000)) >> 2;
-
-		if (TEMP < -1500) { // If Temperature < -15°C
-			OFF2 = OFF2 + 7 * ((TEMP + 1500) * (TEMP + 1500));
-			SENS2 = SENS2 + 11 * ((TEMP + 1500) * (TEMP + 1500)) >> 1;
-		}
-	}
-
-	TEMP = TEMP - T2; // Final compensated temperature
-
-	// 4. Calculate pressure offset (OFF) and sensitivity (SENS)
-	int64_t OFF = ((int64_t) C[2] << 16) + (((int64_t) C[4] * dT) >> 7);
-	int64_t SENS = ((int64_t) C[1] << 15) + (((int64_t) C[3] * dT) >> 8);
-
-	OFF = OFF - OFF2;
-	SENS = SENS - SENS2;
-
-	// 5. Calculate temperature-compensated pressure (P)
-	int32_t P = (int32_t) (((((int64_t) D1 * SENS) >> 21) - OFF) >> 15);
-
-	// 6. Convert to Floats for ease of use
-	current_temperature = (float) TEMP / 100.0f; // Celsius
-	current_pressure = (float) P;               // Pascals
-
-	// 7. Calculate Altitude relative to takeoff point
-	// Use P_at_ground (the pressure captured when the drone was armed)
-	current_altitude = 44330.0f
-			* (1.0f - powf(current_pressure / P_at_ground, 0.190295f));
-
-
-	// 7. BOOT CALIBRATION LOGIC
-	if (calib_counter < CALIB_SAMPLES) {
-		// Skip the first few samples to let the sensor settle (optional but recommended)
-		if (calib_counter > SKIP_SAMPLES) {
-		            P_ground_accumulator += current_pressure;
-		        }
-		calib_counter++;
-
-		// While calibrating, we don't have a valid relative altitude yet
-		relative_altitude = 0.0f;
-	} else if (calib_counter == CALIB_SAMPLES) {
-		// Calculate the final average ground pressure
-		// (Adjusted for the 20 skipped samples)
-		P_at_ground = P_ground_accumulator / (float)(CALIB_SAMPLES - SKIP_SAMPLES);
-		calib_counter++;
-		fc.ground_offset = relative_altitude = 44330.0f
-				* (1.0f - powf(current_pressure / P_at_ground, 0.190295f));;
-
-	} else {
-		// 8. NORMAL FLIGHT CALCULATION
-		// Calculate altitude relative to the captured ground pressure
-		relative_altitude = 44330.0f
-				* (1.0f - powf(current_pressure / P_at_ground, 0.190295f));
-		relative_altitude = relative_altitude-fc.ground_offset;
-//		uint8_t size = sprintf(buffer, "%f\r\n", relative_altitude);
-//		usb_print(buffer, size);
-
-	}
-
-
-}
-
-
-

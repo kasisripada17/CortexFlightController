@@ -1,0 +1,2 @@
+../Core/Src/altitude_hold.c:25:7:update_altitude_fusion	2
+../Core/Src/altitude_hold.c:85:7:compute_altitude_hold_throttle	6

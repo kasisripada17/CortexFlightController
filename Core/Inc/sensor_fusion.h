@@ -7,9 +7,17 @@
 
 #ifndef INC_SENSOR_FUSION_H_
 #define INC_SENSOR_FUSION_H_
-void motionfx_init(void);
 
-void motion_fx_update(void);
+
+typedef struct {
+    float x;
+    float y;
+    float z;
+} Vector3f_t;
+void sensor_fusion_init(void);
+
+void sensor_fusion_update(void);
+
 
 
 #endif /* INC_SENSOR_FUSION_H_ */

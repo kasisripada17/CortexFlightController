@@ -8,6 +8,7 @@
 #ifndef INC_PID_CONTROL_H_
 #define INC_PID_CONTROL_H_
 
+#define PID_DT DT
 
 typedef struct {
     // Gains

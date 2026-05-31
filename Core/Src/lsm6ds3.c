@@ -81,7 +81,7 @@ uint8_t IMU_Read_Reg(uint8_t reg_addr) {
 uint8_t IMU_Init(void) {
 
 	// Initialize secondary sensors first
-	MS5611_Init();
+//	MS5611_Init();
 
 	// Verify device connection
 	if (IMU_Read_Reg(0x0F) != 0x69) {
@@ -241,6 +241,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		static float prevx = 0.0f, prevy = 0.0f, prevz = 0.0f;
 		if (!acc_calib_done) {
 			static uint32_t skip = 0;
+
+
+
+
 			if (skip == 3332) {
 
 				if (acc_calib_counter <= (int) CALIB_SAMPLES) {
@@ -301,49 +305,22 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		prevy = sensor_data.acc_y;
 		prevz = sensor_data.acc_z;
 
-//		uint8_t size = sprintf((char*) buffer, "\r\n%f,%f,%f",
-//				sensor_data.gyro_x,
-//				sensor_data.gyro_y,
-//				sensor_data.gyro_z
-//		);
-//		usb_print(buffer, size);
+		///run_barometer_state_machine() ;
 
-		motion_fx_update();
+
+		sensor_fusion_update();
 
 		flight_control();
 
-		// 2. RUN BARO STATE MACHINE (Non-blocking)
-//		switch (currentBaroState) {
-//		case BARO_STATE_IDLE:
-//			MS5611_Start_Pressure_Conv(); // Send command, pull D15 HIGH
-//			lastBaroTime = HAL_GetTick();
-//			currentBaroState = BARO_STATE_WAIT_PRES;
-//			break;
-//
-//		case BARO_STATE_WAIT_PRES:
-//			if (HAL_GetTick() - lastBaroTime >= 10) { // Check if 10ms passed
-//				D1 = MS5611_Read_ADC_Result();    // Pull D15 LOW, read, HIGH
-//				MS5611_Start_Temp_Conv();
-//				lastBaroTime = HAL_GetTick();
-//				currentBaroState = BARO_STATE_WAIT_TEMP;
-//			}
-//			break;
-//
-//		case BARO_STATE_WAIT_TEMP:
-//			if (HAL_GetTick() - lastBaroTime >= 10) {
-//				D2 = MS5611_Read_ADC_Result();
-//				Calculate_Final_Altitude(D1, D2);
-//				float dt = DT;
-//				alt_fused = update_altitude_fusion(relative_altitude,
-//						a_global[2], dt);
-//				update_tuning_from_radio();
-//
-//				currentBaroState = BARO_STATE_IDLE; // Start over
-//			}
-//			break;
-//		}
 
 	}
 
 }
+
+
+
+
+
+
+
 

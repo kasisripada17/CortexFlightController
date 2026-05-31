@@ -12,25 +12,52 @@
 #include <stdbool.h>
 #include "print.h"
 #include "arm_math.h"
+#include "altitude_hold.h"
+#include <math.h>
+#include <stdbool.h>
 
 // --- Altitude Hold Constants ---
 #define VEL_Z_KP        12.0f    // Snappiness of vertical stop
 #define VEL_Z_KI        0.8f     // Ability to hold weight over time
 #define STICK_DEADZONE  50       // PWM deadzone around 1500 for DJI feel
 #define MAX_CLIMB_RATE  2.5f     // Max vertical speed in m/s
-#define MAX_RATE_ACRO 350.0f
-#define MAX_TILT_ANGLE 50
+
 uint8_t buffer[256];
 extern float relative_altitude;
 extern float alt_fused;
+extern bool alt_hold_initialized;
+extern bool new_baro_ready;
+float outer_roll_integral = 0.0f;
+float outer_pitch_integral = 0.0f;
+float ground_altitude  = 0.0f;
+extern float baro_altitude;
+
+
+//#define TPA_BREAKPOINT 1350.0f  // Throttle level where attenuation begins (just above hover)
+
+
+// --- Global Compile Definitions ---
+#define BRAKING_FORCE 3.20f      // Tuning slider: higher = harder counter-tilt (0.1f to 0.3f)
+
+// --- Structure and Persistence Layer ---
+typedef struct {
+	float last_stick_position;   // Tracks stick position over time frames
+} Braking_State_t;
+
+// Persistent tracking states for stick movement velocity
+static Braking_State_t brake_roll = { 0.0f };
+static Braking_State_t brake_pitch = { 0.0f };
+
+// Prototypes to ensure the compiler maps execution correctly
+float Calculate_Braking_Target_Angle(float current_stick, float max_tilt_angle,
+		Braking_State_t *state, float dt);
+
 // --- Step 3: PID Computation ---
 float roll_cmd = 0.0f;
 float pitch_cmd = 0.0f;
 float yaw_cmd = 0.0f;
-#define TPA_BREAKPOINT 1350.0f  // Throttle level where attenuation begins (just above hover)
-#define TPA_RATE       0.35f    // Attenuate P-gains by 35% at 1000% full throttle
+
 // Add these to your global variables or class members
-bool alt_hold_initialized = false;
 float locked_altitude = 0.0f;
 extern float a_global[3];
 uint16_t size;
@@ -44,7 +71,7 @@ bool start_gyro_calibration = false;
 extern Sensor_Calibration gyro_calibration;
 extern float velocity_earth[3];
 bool motor_test = false;
-#define PID_DT DT
+
 static inline float constrain(float value, float min, float max) {
 	if (value < min)
 		return min;
@@ -52,10 +79,12 @@ static inline float constrain(float value, float min, float max) {
 		return max;
 	return value;
 }
+
 float gyro_filteredx = 0.0f, gyro_filteredy = 0.0f, gyro_filteredz = 0.0f;
 
 Flight_Mode_t flight_mode = ACRO;
-
+extern float accx, accy, accz;
+extern float angx, angy, angz;
 // Function Prototypes for visibility
 void Mix_Motors_Adjusted(float r_cmd, float p_cmd, float y_cmd, float throttle);
 void reset_inertial_nav(void); // Defined in motion_fx.c
@@ -100,12 +129,13 @@ void update_arm_status() {
 		break;
 	case ARMING:
 		if (sticks_in_arm_position) {
-			if (HAL_GetTick() - stick_hold_start >= 2000) {
+			if (HAL_GetTick() - stick_hold_start >= 1000) {
 				armed_status = ARMED_SAFE;
 				// Reset PIDs
 				fc.roll.integral = 0.0f;
 				fc.pitch.integral = 0.0f;
 				fc.yaw.integral = 0.0f;
+				ground_altitude = baro_altitude;
 
 			}
 		} else {
@@ -122,12 +152,13 @@ void update_arm_status() {
 		if (sticks_in_disarm_position) {
 			stick_hold_start = HAL_GetTick();
 			armed_status = DISARMING;
+
 		}
 		break;
 
 	case DISARMING:
 		if (sticks_in_disarm_position) {
-			if (HAL_GetTick() - stick_hold_start >= 2000)
+			if (HAL_GetTick() - stick_hold_start >= 1000)
 				armed_status = DISARMED;
 		} else {
 			armed_status = ARMED;
@@ -138,6 +169,30 @@ void update_arm_status() {
 	}
 }
 
+#ifdef ONE_SHOT_ESCS
+void Mix_Motors_Adjusted(float r_cmd, float p_cmd, float y_cmd, float throttle) {
+		float m[4];
+		m[0] = throttle - p_cmd - r_cmd - y_cmd; // FR
+		m[1] = throttle - p_cmd + r_cmd + y_cmd; // FL
+		m[2] = throttle + p_cmd + r_cmd - y_cmd; // RL
+		m[3] = throttle + p_cmd - r_cmd + y_cmd; // RR
+	// 2. Hardware Bounds Clamp Protection
+
+
+
+
+		for (int i = 0; i < 4; i++) {
+			if (m[i] < ONESHOT125_MIN)
+				m[i] = ONESHOT125_MIN;
+			if (m[i] > ONESHOT125_MAX)
+				m[i] = ONESHOT125_MAX;
+		}
+
+		update_motors(m[0], m[1], m[2], m[3]);
+
+}
+#endif
+#ifdef TRADITION_PWM_ESCS
 void Mix_Motors_Adjusted(float r_cmd, float p_cmd, float y_cmd, float throttle) {
 	float m[4];
 	m[0] = throttle - p_cmd - r_cmd - y_cmd; // FR
@@ -153,78 +208,104 @@ void Mix_Motors_Adjusted(float r_cmd, float p_cmd, float y_cmd, float throttle) 
 	}
 	update_motors(m[0], m[1], m[2], m[3]);
 }
+#endif
 
+
+
+/**
+ * @brief Main flight control loop task executed at the system rate (PID_DT).
+ */
 void flight_control(void) {
-	  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+	// 1. Start profiling latency immediately
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 
 	get_flight_mode();
 	update_arm_status();
+//	update_tuning_from_radio();
 	const float dt = PID_DT;
 
+	// Fix 1: State Machine Housekeeping
+	if (flight_mode != ALTITUDE_HOLD) {
+		alt_hold_initialized = 0U;
+	}
+
 	if (armed_status == ARMED) {
+//		size = sprintf(buffer, "\r\n%f",alt_fused);
+//		usb_print(buffer,size);
+//        /float current_throttle = (float) radio.throttle;
+		// Scale your incoming 1000-2000 stick cleanly to 34375-68750
+		// float current_throttle = ((float)(radio.throttle - 1000) / 1000.0f) * (68750.0f - 34375.0f) + 34375.0f;
 
-		float current_throttle = (float) radio.throttle;
+		// Corrected: Use dedicated unipolar parsing to eliminate the half-stick deadzone
+		float throttle_scalar = normalize_radio_throttle(radio.throttle);
 
-		// --- Step 2: Attitude Management ---
-		if (flight_mode == ACRO) {
-			alt_hold_initialized = 0U;
+		// Map smoothly starting directly from your ARMED_IDLE up to MAX across full stick travel
+		float current_throttle =  ONESHOT125_MIN+ (throttle_scalar * (ONESHOT125_MAX-ONESHOT125_MIN))+MOTOR_IDLE_GAP;
 
-			fc.target_roll_rate = normalize_radio(radio.roll)*MAX_RATE_ACRO;
-			fc.target_pitch_rate = -normalize_radio(radio.pitch)*MAX_RATE_ACRO;
-		}else if (flight_mode == SELF_LEVEL) {
-		    alt_hold_initialized = 0U;
+		// Normalize radio sticks (-1.0 to 1.0)
+		float stick_roll = normalize_radio(radio.roll);
+		float stick_pitch = -normalize_radio(radio.pitch);
+		float stick_yaw = -normalize_radio(radio.yaw);
 
-		    // 1. Define hard geometric and structural limits
+		// Default: Set target rates directly to ACRO capabilities
+		fc.target_roll_rate = stick_roll * MAX_RATE_ACRO;
+		fc.target_pitch_rate = stick_pitch * MAX_RATE_ACRO;
+		fc.target_yaw_rate = stick_yaw * MAX_RATE_ACRO;
 
-		    // 2. Map radio sticks cleanly to a safe maximum tilt angle
-		    float target_roll_angle  = normalize_radio(radio.roll) * MAX_TILT_ANGLE;
-		    float target_pitch_angle = -normalize_radio(radio.pitch) * MAX_TILT_ANGLE;
+		// Cascade Attitude Controller (Self-Level / Altitude Hold)
+		if (flight_mode == SELF_LEVEL || flight_mode == ALTITUDE_HOLD) {
 
-		    // 3. Compute outer-loop error and scale by Angle P gain
-		    float commanded_roll_rate  = (target_roll_angle - sensor_data.roll) * fc.roll_angle_p;
-		    float commanded_pitch_rate = (target_pitch_angle - sensor_data.pitch) * fc.pitch_angle_p;
+			if (flight_mode == ALTITUDE_HOLD) {
+				if (!alt_hold_initialized) {
+					fc.target_altitude = alt_fused; // Lock height
+					PID_Reset(&fc.alt, 0);          // Flush Z-axis I-term
+					alt_hold_initialized = 1U;
+				}
 
-		    // 4. CRITICAL STEP: Clamp the outputs before feeding them to the inner loop
-		    if (commanded_roll_rate > MAX_RATE_ACRO)  commanded_roll_rate = MAX_RATE_ACRO;
-		    if (commanded_roll_rate < -MAX_RATE_ACRO) commanded_roll_rate = -MAX_RATE_ACRO;
-
-		    if (commanded_pitch_rate > MAX_RATE_ACRO)  commanded_pitch_rate = MAX_RATE_ACRO;
-		    if (commanded_pitch_rate < -MAX_RATE_ACRO) commanded_pitch_rate = -MAX_RATE_ACRO;
-
-		    // 5. Pass the safe, constrained target rates down to the inner loop hot-path
-		    fc.target_roll_rate  = commanded_roll_rate;
-		    fc.target_pitch_rate = commanded_pitch_rate;
-		} else if (flight_mode == ALTITUDE_HOLD) {
-
-			if (!alt_hold_initialized) {
-				// LOCK THE HEIGHT: Capture current altitude as target
-				fc.target_altitude = alt_fused;
-
-				// RESET PID: Clear previous I-term to prevent a sudden jump
-				PID_Reset(&fc.alt, 0);
-
-				alt_hold_initialized = 1;
+				current_throttle = compute_altitude_hold_throttle(dt);
 			}
 
-			current_throttle = compute_altitude_hold_throttle(dt);
-		    // 2. Map radio sticks cleanly to a safe maximum tilt angle
-		    float target_roll_angle  = normalize_radio(radio.roll) * MAX_TILT_ANGLE;
-		    float target_pitch_angle = -normalize_radio(radio.pitch) * MAX_TILT_ANGLE;
+			// -----------------------------------------------------------------
+			// INTEGRATED BRAKING TARGET CALLS
+			// -----------------------------------------------------------------
+			// We pass stick inputs, constraints, persistent track structs, and dt
+//            float target_angle_roll  = Calculate_Braking_Target_Angle(stick_roll,  MAX_TILT_ANGLE, &brake_roll,  dt);
+//            float target_angle_pitch = Calculate_Braking_Target_Angle(stick_pitch, MAX_TILT_ANGLE, &brake_pitch, dt);
+			// -----------------------------------------------------------------
 
-		    // 3. Compute outer-loop error and scale by Angle P gain
-		    float commanded_roll_rate  = (target_roll_angle - sensor_data.roll) * fc.roll_angle_p;
-		    float commanded_pitch_rate = (target_pitch_angle - sensor_data.pitch) * fc.pitch_angle_p;
+			float target_angle_roll = stick_roll * MAX_TILT_ANGLE;
+			float target_angle_pitch = stick_pitch * MAX_TILT_ANGLE;
 
-		    // 4. CRITICAL STEP: Clamp the outputs before feeding them to the inner loop
-		    if (commanded_roll_rate > MAX_RATE_ACRO)  commanded_roll_rate = MAX_RATE_ACRO;
-		    if (commanded_roll_rate < -MAX_RATE_ACRO) commanded_roll_rate = -MAX_RATE_ACRO;
+			// 1. Calculate raw angle error differences
+			float angle_error_roll = target_angle_roll - sensor_data.roll;
+			float angle_error_pitch = target_angle_pitch - sensor_data.pitch;
 
-		    if (commanded_pitch_rate > MAX_RATE_ACRO)  commanded_pitch_rate = MAX_RATE_ACRO;
-		    if (commanded_pitch_rate < -MAX_RATE_ACRO) commanded_pitch_rate = -MAX_RATE_ACRO;
+			// 2. Accumulate historical errors to counter persistent drift (Trim Engine)
+			outer_roll_integral += angle_error_roll * dt;
+			outer_pitch_integral += angle_error_pitch * dt;
+
+			// 3. Smooth Anti-Windup Clamps to protect your control bounds
+			if (outer_roll_integral > ANGLE_I_MAX)
+				outer_roll_integral = ANGLE_I_MAX;
+			if (outer_roll_integral < -ANGLE_I_MAX)
+				outer_roll_integral = -ANGLE_I_MAX;
+			if (outer_pitch_integral > ANGLE_I_MAX)
+				outer_pitch_integral = ANGLE_I_MAX;
+			if (outer_pitch_integral < -ANGLE_I_MAX)
+				outer_pitch_integral = -ANGLE_I_MAX;
+
+			// 4. Compute composite error targets combining Proportional and Integral blocks
+			float error_rate_roll = (angle_error_roll * fc.roll_angle_p)
+					+ (outer_roll_integral * ANGLE_KI);
+			float error_rate_pitch = (angle_error_pitch * fc.pitch_angle_p)
+					+ (outer_pitch_integral * ANGLE_KI);
+
+			fc.target_roll_rate = error_rate_roll;
+			fc.target_pitch_rate = error_rate_pitch;
+
 		}
-		fc.target_yaw_rate = -normalize_radio(radio.yaw)*360.0f;
 
-		// Clamp rates
+		// Global Inner-Loop Rate Clamping
 		if (fc.target_roll_rate > MAX_RATE_ACRO)
 			fc.target_roll_rate = MAX_RATE_ACRO;
 		if (fc.target_roll_rate < -MAX_RATE_ACRO)
@@ -238,46 +319,89 @@ void flight_control(void) {
 		if (fc.target_yaw_rate < -MAX_RATE_ACRO)
 			fc.target_yaw_rate = -MAX_RATE_ACRO;
 
-		// --- Step 3: PID Computation ---
-		fc.roll.output = 0.80f*PID_Compute(&fc.roll, fc.target_roll_rate,
-				gyro_filteredx , dt);
-		fc.pitch.output = PID_Compute(&fc.pitch, fc.target_pitch_rate,
-				gyro_filteredy , dt);
-		fc.yaw.output = PID_Compute(&fc.yaw, fc.target_yaw_rate,
-				gyro_filteredz , dt);
-
 
 		float tpa_factor = 1.0f;
-
-		if (radio.throttle > TPA_BREAKPOINT) {
-		    float throttle_range = 2000.0f - TPA_BREAKPOINT;
-		    float current_progress = (radio.throttle - TPA_BREAKPOINT) / throttle_range;
-
-		    // Linearly scale down towards your minimum allowed gain multiplier
-		    tpa_factor = 1.0f - (TPA_RATE * current_progress);
+		if (current_throttle > TPA_BREAKPOINT) {
+			float throttle_range = TPA_MAX_LIMIT - TPA_BREAKPOINT;
+			float current_progress = (current_throttle - TPA_BREAKPOINT)
+					/ throttle_range;
+			tpa_factor = 1.0f - (TPA_RATE * current_progress);
+			if (tpa_factor < 0.0f)
+				tpa_factor = 0.0f;
 		}
 
-		// 3. Apply TPA attenuation to your Proportional/Derivative tracking loops
-		float attenuated_roll  = fc.roll.output  * tpa_factor;
-		float attenuated_pitch = fc.pitch.output * tpa_factor;
-
-
+		// Inbound TPA Execution
+		fc.roll.output = PID_Compute(&fc.roll, fc.target_roll_rate * tpa_factor, angx, dt);
+		fc.pitch.output = PID_Compute(&fc.pitch,fc.target_pitch_rate * tpa_factor, angy, dt);
+		fc.yaw.output = PID_Compute(&fc.yaw, fc.target_yaw_rate * tpa_factor, angz, dt);
 
 		// --- Step 4: Mixer Output ---
-		Mix_Motors_Adjusted(attenuated_roll , attenuated_pitch ,
-				fc.yaw.output, current_throttle);
-		  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+		Mix_Motors_Adjusted(fc.roll.output, fc.pitch.output, fc.yaw.output,
+				current_throttle);
 
 	} else {
-		alt_hold_initialized = 0;
-		PID_Reset(&fc.roll, gyro_filteredx);
-		PID_Reset(&fc.pitch, gyro_filteredy);
-		PID_Reset(&fc.yaw, gyro_filteredz);
+		// Disarmed Cleanup
+		alt_hold_initialized = 0U;
+		brake_roll.last_stick_position = 0.0f;  // Flush registers when disarmed
+		brake_pitch.last_stick_position = 0.0f;
+		PID_Reset(&fc.roll, angx);
+		PID_Reset(&fc.pitch, angy);
+		PID_Reset(&fc.yaw, angz);
 		if (motor_test == false && esc_calibration == false) {
-			update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF);
+			update_motors(ONESHOT125_MIN, ONESHOT125_MIN, ONESHOT125_MIN,
+					ONESHOT125_MIN);
 		}
 	}
 
+	// Fix 2: Universal Profiling Pin Pull-Down
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+}
+// Add this helper function to your file or headers to cleanly isolate the channel math
+float normalize_radio_throttle(float raw_throttle) {
+	if (raw_throttle < 1000.0f)
+		raw_throttle = 1000.0f;
+	if (raw_throttle > 2000.0f)
+		raw_throttle = 2000.0f;
+
+	// Returns 0.0 at low stick, 0.5 at half stick, and 1.0 at full high stick
+	return (float) (raw_throttle - 1000.0f) / 1000.0f;
+}
+/**
+ * @brief Calculates the target angle for Angle Mode, injecting a temporary
+ *        counter-angle brake if the pilot quickly snaps the sticks to center.
+ */
+float Calculate_Braking_Target_Angle(float current_stick, float max_tilt_angle,
+		Braking_State_t *state, float dt) {
+	if (dt < 0.0001f)
+		dt = 0.0001f;
+
+	// 1. Calculate standard pilot target angle based on stick deflection
+	float base_target_angle = current_stick * max_tilt_angle;
+
+	// 2. Calculate Stick Velocity (How fast is the pilot moving the stick?)
+	float stick_velocity = (current_stick - state->last_stick_position) / dt;
+	state->last_stick_position = current_stick; // Update tracking register
+
+	// 3. Detect if the stick is rushing back toward center (0.0f)
+	float braking_injection = 0.0f;
+
+	if ((current_stick > 0.05f && stick_velocity < -0.1f)
+			|| (current_stick < -0.05f && stick_velocity > 0.1f)) {
+		// Inject a counter-force proportional to how violently the stick was centered
+		braking_injection = stick_velocity * BRAKING_FORCE;
+	}
+
+	// 4. Combine base target angle with the temporary braking modifier
+	float final_target_angle = base_target_angle - braking_injection;
+
+	// 5. Hard clamp the output so the braking action never exceeds safe flight envelopes
+	float absolute_max_clamp = max_tilt_angle * 1.3f; // Allow 30% overshoot for braking authority
+	if (final_target_angle > absolute_max_clamp)
+		final_target_angle = absolute_max_clamp;
+	if (final_target_angle < -absolute_max_clamp)
+		final_target_angle = -absolute_max_clamp;
+
+	return final_target_angle;
 }
 
 void get_flight_mode(void) {
@@ -289,29 +413,3 @@ void get_flight_mode(void) {
 		flight_mode = ALTITUDE_HOLD;
 }
 
-float compute_altitude_hold_throttle(float dt) {
-
-	// 1. INITIALIZATION & SAFETY CHECK
-	// If not armed or not in the right mode, reset and pass through manual throttle
-	if (armed_status != ARMED) {
-		alt_hold_initialized = false;
-		return (float) radio.throttle;
-	}
-
-	// Standard Base Hover Throttle (adjust this for your drone's weight)
-	const float HOVER_THROTTLE = 1500.0f;
-
-	// Compute PID adjustment based on altitude error
-	float adjustment = PID_Compute(&fc.alt, fc.target_altitude, alt_fused, dt);
-
-	float final_throttle = radio.throttle + adjustment;
-
-	// Safety Clamps: Don't let Alt-Hold stop the motors or go full 100%
-	if (final_throttle > 1800.0f)
-		final_throttle = 1800.0f;
-	if (final_throttle < 1200.0f)
-		final_throttle = 1200.0f;
-
-	return final_throttle;
-
-}

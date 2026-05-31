@@ -1,0 +1,8 @@
+../Core/Src/motion_ac_manager.c:29:6:MotionAC_manager_init	1
+../Core/Src/motion_ac_manager.c:40:6:MotionAC_manager_update	1
+../Core/Src/motion_ac_manager.c:50:6:MotionAC_manager_get_params	1
+../Core/Src/motion_ac_manager.c:61:6:MotionAC_manager_get_version	1
+../Core/Src/motion_ac_manager.c:72:6:MotionAC_manager_compensate	1
+../Core/Src/motion_ac_manager.c:103:9:acc_bias_to_mg	2
+../Core/Src/motion_ac_manager.c:133:6:MotionAC_LoadCalFromNVM	1
+../Core/Src/motion_ac_manager.c:146:6:MotionAC_SaveCalInNVM	1

@@ -21,12 +21,13 @@
 
 // Define states for the Barometer
 typedef enum {
-    BARO_STATE_IDLE,
-    BARO_STATE_CONV_PRES,
+    BARO_STATE_START_PRES = 0,
     BARO_STATE_WAIT_PRES,
-    BARO_STATE_CONV_TEMP,
-    BARO_STATE_WAIT_TEMP
+    BARO_STATE_START_TEMP,
+    BARO_STATE_WAIT_TEMP,
+	BARO_STATE_IDLE
 } BaroState_t;
+
 
 
 
@@ -38,6 +39,7 @@ void MS5611_Start_Pressure_Conv(void) ;
 void MS5611_Start_Temp_Conv(void) ;
 uint32_t MS5611_Read_ADC_Result(void) ;
 void Calculate_Final_Altitude(uint32_t D1, uint32_t D2) ;
+void run_barometer_state_machine(void) ;
 
 
 

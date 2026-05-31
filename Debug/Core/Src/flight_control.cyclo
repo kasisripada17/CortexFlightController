@@ -1,5 +1,6 @@
-../Core/Src/flight_control.c:63:6:update_arm_status	43
-../Core/Src/flight_control.c:141:6:Mix_Motors_Adjusted	4
-../Core/Src/flight_control.c:157:6:flight_control	23
-../Core/Src/flight_control.c:283:6:get_flight_mode	7
-../Core/Src/flight_control.c:292:7:compute_altitude_hold_throttle	4
+../Core/Src/flight_control.c:92:6:update_arm_status	43
+../Core/Src/flight_control.c:173:6:Mix_Motors_Adjusted	4
+../Core/Src/flight_control.c:218:6:flight_control	21
+../Core/Src/flight_control.c:360:7:normalize_radio_throttle	3
+../Core/Src/flight_control.c:373:7:Calculate_Braking_Target_Angle	8
+../Core/Src/flight_control.c:407:6:get_flight_mode	7

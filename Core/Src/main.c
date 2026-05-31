@@ -1,27 +1,8 @@
-/* USER CODE BEGIN Header */
-/**
- ******************************************************************************
- * @file           : main.c
- * @brief          : Main program body
- ******************************************************************************
- * @attention
- *
- * Copyright (c) 2026 STMicroelectronics.
- * All rights reserved.
- *
- * This software is licensed under terms that can be found in the LICENSE file
- * in the root directory of this software component.
- * If no LICENSE file comes with this software, it is provided AS-IS.
- *
- ******************************************************************************
- */
-/* USER CODE END Header *
- *
- * /
+
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "usb_device.h"
-
+#include "motion_ac_manager.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
@@ -35,6 +16,7 @@
 #include <stdbool.h>
 #include "gyro_calibration.h"
 #include "telemetry.h"
+#include "barometer.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -211,6 +193,7 @@ int main(void)
   	MX_CRC_Init();
 
   	IMU_Init();
+    MotionAC_manager_init(1);
 
   	// Enable the Interrupt Line 4 (PC4 uses EXTI4)
   	HAL_NVIC_SetPriority(EXTI4_IRQn, 1, 0);
@@ -221,10 +204,10 @@ int main(void)
   	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);
   	HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);
   	/* Start the first receive manually to kickstart the interrupt chain */
-  	update_motors(MOTOR_OFF, MOTOR_OFF, MOTOR_OFF, MOTOR_OFF); // Send stop pulse
+	update_motors(ONESHOT125_MIN, ONESHOT125_MIN, ONESHOT125_MIN, ONESHOT125_MIN);
   	/* Disable Caches for debugging library linking */
 
-  	gyro_calibration_init();
+  //	gyro_calibration_init();
 
   #ifdef MOTION_FX_ST
 
@@ -488,30 +471,24 @@ static void MX_TIM1_Init(void)
   /* USER CODE END TIM1_Init 2 */
 
 }
-
-/**
-  * @brief TIM2 Initialization Function
-  * @param None
-  * @retval None
-  */
 static void MX_TIM2_Init(void)
 {
-
-  /* USER CODE BEGIN TIM2_Init 0 */
-
-  /* USER CODE END TIM2_Init 0 */
-
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
   TIM_OC_InitTypeDef sConfigOC = {0};
 
-  /* USER CODE BEGIN TIM2_Init 1 */
-
-  /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 274;
+
+  // Hardened Oneshot125 Configuration:
+  // Prescaler = 0 splits no clocks, running TIM2 at the full 275 MHz speed.
+  // 1 tick = ~3.636 nanoseconds for incredible signal tracking precision.
+  htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 2499;
+
+  // Counter Period (ARR) = 165000 ticks.
+  // At 275 MHz, counting to 165000 takes exactly 600 microseconds (Matches your 1666Hz flight loop).
+  htim2.Init.Period = 165000;
+
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -553,12 +530,79 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN TIM2_Init 2 */
-
-  /* USER CODE END TIM2_Init 2 */
   HAL_TIM_MspPostInit(&htim2);
-
 }
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+//static void MX_TIM2_Init(void)
+//{
+//
+//  /* USER CODE BEGIN TIM2_Init 0 */
+//
+//  /* USER CODE END TIM2_Init 0 */
+//
+//  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+//  TIM_MasterConfigTypeDef sMasterConfig = {0};
+//  TIM_OC_InitTypeDef sConfigOC = {0};
+//
+//  /* USER CODE BEGIN TIM2_Init 1 */
+//
+//  /* USER CODE END TIM2_Init 1 */
+//  htim2.Instance = TIM2;
+//  htim2.Init.Prescaler = 274;
+//  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+//  htim2.Init.Period = 2499;
+//  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+//  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+//  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+//  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+//  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+//  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+//  sConfigOC.Pulse = 0;
+//  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+//  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+//  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
+//  {
+//    Error_Handler();
+//  }
+//  /* USER CODE BEGIN TIM2_Init 2 */
+//
+//  /* USER CODE END TIM2_Init 2 */
+//  HAL_TIM_MspPostInit(&htim2);
+//
+//}
 
 /**
   * @brief UART4 Initialization Function
@@ -704,15 +748,18 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
-
   /*Configure GPIO pin : PA4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Pin = GPIO_PIN_4 | GPIO_PIN_9;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_SET);
+
 
   /*Configure GPIO pin : int_Pin */
   GPIO_InitStruct.Pin = int_Pin;
@@ -812,8 +859,18 @@ void loop_processing(void) {
 				usb_print((uint8_t*) "ESC_CALIBRATION_STARETED\r\n",
 						strlen("ESC_CALIBRATION_STARETED\r\n"));
 
-				update_motors((uint32_t) radio.throttle, (uint32_t) radio.throttle,
-						(uint32_t) radio.throttle, (uint32_t) radio.throttle);
+						float throttle_scalar = normalize_radio_throttle(radio.throttle);
+
+						// Map smoothly starting directly from your ARMED_IDLE up to MAX across full stick travel
+
+						float current_throttle =  ONESHOT125_MIN+ (throttle_scalar * (ONESHOT125_MAX-ONESHOT125_MIN));
+
+						   // CRITICAL HARDWARE PROTECTION CLAMP
+						    // Protects the timer channels against sub-1000us or over-2000us radio channel jitter
+						    if (current_throttle > (float)ONESHOT125_MAX) current_throttle = (float)ONESHOT125_MAX;
+						    if (current_throttle < (float)ONESHOT125_MIN) current_throttle = (float)ONESHOT125_MIN;
+				update_motors((uint32_t)current_throttle, (uint32_t) current_throttle,
+						(uint32_t) current_throttle, (uint32_t) current_throttle);
 			}
 
 

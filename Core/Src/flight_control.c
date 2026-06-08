@@ -4,25 +4,38 @@
  *  Created on: 09-Apr-2026
  *      Author: kasiviswanadhsripada
  */
+#include <stdbool.h>
+#include <math.h>
+#include <stdbool.h>
+//#include "arm_math.h"
+
 #include "flight_control.h"
 #include "motors.h"
 #include "radio.h"
 #include "lsm6ds3.h"
 #include "pid_control.h"
-#include <stdbool.h>
 #include "print.h"
-#include "arm_math.h"
 #include "altitude_hold.h"
-#include <math.h>
-#include <stdbool.h>
 
-// --- Altitude Hold Constants ---
-#define VEL_Z_KP        12.0f    // Snappiness of vertical stop
-#define VEL_Z_KI        0.8f     // Ability to hold weight over time
-#define STICK_DEADZONE  50       // PWM deadzone around 1500 for DJI feel
-#define MAX_CLIMB_RATE  2.5f     // Max vertical speed in m/s
 
-uint8_t buffer[256];
+
+#define TARGET_CENTER  (0.50f)
+#define DEADBAND_HALF_WIDTH  (0.1f)
+#define MAX_CLIMB_RATE  (2.5f)
+
+extern float baroLPFAltitude ;
+
+//variables for altitude hold
+float deadband_lower = TARGET_CENTER - DEADBAND_HALF_WIDTH;
+float deadband_upper = TARGET_CENTER + DEADBAND_HALF_WIDTH;
+bool is_alt_locked = false;
+
+
+
+
+
+
+char buffer[256];
 extern float relative_altitude;
 extern float alt_fused;
 extern bool alt_hold_initialized;
@@ -33,11 +46,14 @@ float ground_altitude  = 0.0f;
 extern float baro_altitude;
 
 
+
+
+
 //#define TPA_BREAKPOINT 1350.0f  // Throttle level where attenuation begins (just above hover)
 
 
 // --- Global Compile Definitions ---
-#define BRAKING_FORCE 3.20f      // Tuning slider: higher = harder counter-tilt (0.1f to 0.3f)
+#define BRAKING_FORCE 3.20f      // Tuning // Configuration constants
 
 // --- Structure and Persistence Layer ---
 typedef struct {
@@ -87,7 +103,7 @@ extern float accx, accy, accz;
 extern float angx, angy, angz;
 // Function Prototypes for visibility
 void Mix_Motors_Adjusted(float r_cmd, float p_cmd, float y_cmd, float throttle);
-void reset_inertial_nav(void); // Defined in motion_fx.c
+
 
 void update_arm_status() {
 	static uint32_t stick_hold_start = 0;
@@ -135,7 +151,7 @@ void update_arm_status() {
 				fc.roll.integral = 0.0f;
 				fc.pitch.integral = 0.0f;
 				fc.yaw.integral = 0.0f;
-				ground_altitude = baro_altitude;
+				ground_altitude = baroLPFAltitude;
 
 			}
 		} else {
@@ -230,13 +246,9 @@ void flight_control(void) {
 	}
 
 	if (armed_status == ARMED) {
-//		size = sprintf(buffer, "\r\n%f",alt_fused);
-//		usb_print(buffer,size);
-//        /float current_throttle = (float) radio.throttle;
-		// Scale your incoming 1000-2000 stick cleanly to 34375-68750
-		// float current_throttle = ((float)(radio.throttle - 1000) / 1000.0f) * (68750.0f - 34375.0f) + 34375.0f;
 
-		// Corrected: Use dedicated unipolar parsing to eliminate the half-stick deadzone
+
+		//normalize throttle from 1000us-2000us pulses to 0.0f to 1.0f
 		float throttle_scalar = normalize_radio_throttle(radio.throttle);
 
 		// Map smoothly starting directly from your ARMED_IDLE up to MAX across full stick travel
@@ -248,21 +260,36 @@ void flight_control(void) {
 		float stick_yaw = -normalize_radio(radio.yaw);
 
 		// Default: Set target rates directly to ACRO capabilities
-		fc.target_roll_rate = stick_roll * MAX_RATE_ACRO;
-		fc.target_pitch_rate = stick_pitch * MAX_RATE_ACRO;
-		fc.target_yaw_rate = stick_yaw * MAX_RATE_ACRO;
+		fc.target_roll_rate = stick_roll * fc.max_rate;
+		fc.target_pitch_rate = stick_pitch * fc.max_rate;
+		fc.target_yaw_rate = stick_yaw * fc.max_rate;
 
 		// Cascade Attitude Controller (Self-Level / Altitude Hold)
 		if (flight_mode == SELF_LEVEL || flight_mode == ALTITUDE_HOLD) {
 
 			if (flight_mode == ALTITUDE_HOLD) {
 				if (!alt_hold_initialized) {
-					fc.target_altitude = alt_fused; // Lock height
 					PID_Reset(&fc.alt, 0);          // Flush Z-axis I-term
 					alt_hold_initialized = 1U;
 				}
 
+				if (throttle_scalar >= deadband_lower && throttle_scalar <= deadband_upper) {
+
+					if (!is_alt_locked) {
+						fc.target_altitude = alt_fused; // Lock height
+						is_alt_locked = true; // Latch the state so it doesn't overwrite next cycle
+						size  = sprintf(buffer,"altitude updated %f\r\n",fc.target_altitude);
+						usb_print(buffer,size);
+
+					}
+				}else
+				{
+					is_alt_locked = false;
+				}
+
 				current_throttle = compute_altitude_hold_throttle(dt);
+
+
 			}
 
 			// -----------------------------------------------------------------
@@ -273,8 +300,8 @@ void flight_control(void) {
 //            float target_angle_pitch = Calculate_Braking_Target_Angle(stick_pitch, MAX_TILT_ANGLE, &brake_pitch, dt);
 			// -----------------------------------------------------------------
 
-			float target_angle_roll = stick_roll * MAX_TILT_ANGLE;
-			float target_angle_pitch = stick_pitch * MAX_TILT_ANGLE;
+			float target_angle_roll = stick_roll * fc.max_tilt_angle;
+			float target_angle_pitch = stick_pitch * fc.max_tilt_angle;
 
 			// 1. Calculate raw angle error differences
 			float angle_error_roll = target_angle_roll - sensor_data.roll;
@@ -285,20 +312,20 @@ void flight_control(void) {
 			outer_pitch_integral += angle_error_pitch * dt;
 
 			// 3. Smooth Anti-Windup Clamps to protect your control bounds
-			if (outer_roll_integral > ANGLE_I_MAX)
-				outer_roll_integral = ANGLE_I_MAX;
-			if (outer_roll_integral < -ANGLE_I_MAX)
-				outer_roll_integral = -ANGLE_I_MAX;
-			if (outer_pitch_integral > ANGLE_I_MAX)
-				outer_pitch_integral = ANGLE_I_MAX;
-			if (outer_pitch_integral < -ANGLE_I_MAX)
-				outer_pitch_integral = -ANGLE_I_MAX;
+			if (outer_roll_integral > fc.angle_mode_max_i)
+				outer_roll_integral = fc.angle_mode_max_i;
+			if (outer_roll_integral < -fc.angle_mode_max_i)
+				outer_roll_integral = -fc.angle_mode_max_i;
+			if (outer_pitch_integral > fc.angle_mode_max_i)
+				outer_pitch_integral = fc.angle_mode_max_i;
+			if (outer_pitch_integral < -fc.angle_mode_max_i)
+				outer_pitch_integral = -fc.angle_mode_max_i;
 
 			// 4. Compute composite error targets combining Proportional and Integral blocks
 			float error_rate_roll = (angle_error_roll * fc.roll_angle_p)
-					+ (outer_roll_integral * ANGLE_KI);
+					+ (outer_roll_integral * fc.angle_mode_ki);
 			float error_rate_pitch = (angle_error_pitch * fc.pitch_angle_p)
-					+ (outer_pitch_integral * ANGLE_KI);
+					+ (outer_pitch_integral * fc.angle_mode_ki);
 
 			fc.target_roll_rate = error_rate_roll;
 			fc.target_pitch_rate = error_rate_pitch;
@@ -306,18 +333,18 @@ void flight_control(void) {
 		}
 
 		// Global Inner-Loop Rate Clamping
-		if (fc.target_roll_rate > MAX_RATE_ACRO)
-			fc.target_roll_rate = MAX_RATE_ACRO;
-		if (fc.target_roll_rate < -MAX_RATE_ACRO)
-			fc.target_roll_rate = -MAX_RATE_ACRO;
-		if (fc.target_pitch_rate > MAX_RATE_ACRO)
-			fc.target_pitch_rate = MAX_RATE_ACRO;
-		if (fc.target_pitch_rate < -MAX_RATE_ACRO)
-			fc.target_pitch_rate = -MAX_RATE_ACRO;
-		if (fc.target_yaw_rate > MAX_RATE_ACRO)
-			fc.target_yaw_rate = MAX_RATE_ACRO;
-		if (fc.target_yaw_rate < -MAX_RATE_ACRO)
-			fc.target_yaw_rate = -MAX_RATE_ACRO;
+		if (fc.target_roll_rate > fc.max_rate)
+			fc.target_roll_rate = fc.max_rate;
+		if (fc.target_roll_rate < -fc.max_rate)
+			fc.target_roll_rate = -fc.max_rate;
+		if (fc.target_pitch_rate > fc.max_rate)
+			fc.target_pitch_rate = fc.max_rate;
+		if (fc.target_pitch_rate < -fc.max_rate)
+			fc.target_pitch_rate = -fc.max_rate;
+		if (fc.target_yaw_rate > fc.max_rate)
+			fc.target_yaw_rate = fc.max_rate;
+		if (fc.target_yaw_rate < -fc.max_rate)
+			fc.target_yaw_rate = -fc.max_rate;
 
 
 		float tpa_factor = 1.0f;

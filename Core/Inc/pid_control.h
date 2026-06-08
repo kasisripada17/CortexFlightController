@@ -44,15 +44,22 @@ typedef struct {
 	PID_Controller yaw;
 	PID_Controller alt;      // <--- Added for Altitude Hold
 	// Outer Angle Loop Gains
-	float roll_angle_p;
-	float pitch_angle_p;
+	const float roll_angle_p;
+	const float pitch_angle_p;
+	const float angle_mode_ki;
+	const float angle_mode_max_i;
 	// Altitude Management
 	float target_altitude;   // The "locked" height
 	float hover_throttle;    // The base throttle needed to stay level
 	float ground_offset;
+	//attitude mode variables
 	float target_roll_rate;
 	float target_pitch_rate;
 	float target_yaw_rate;
+	//flight limits
+	const float max_rate;
+	const float max_tilt_angle;
+
 } Flight_Control_t;
 
 float PID_Compute(PID_Controller *pid, float target, float actual, float dt) ;

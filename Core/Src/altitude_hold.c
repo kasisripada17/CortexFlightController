@@ -10,6 +10,8 @@
 #include "pid_control.h"
 #include "lsm6ds3.h"
 #include "motors.h"
+#include <stdio.h>
+#include "print.h"
 static float fused_alt = 0.0f;
 static float fused_vel = 0.0f;
 bool alt_hold_initialized = false;
@@ -22,33 +24,49 @@ extern volatile IMU_Data_t sensor_data ;
 extern float ground_altitude;
 extern float baro_altitude;
 extern bool new_baro_ready ;
+extern char buffer[256];
+float acc_vel = 0.0f;
+float acc_alt = 0.0f;
+// Persistent filter state variable (initialize to 0.0f on startup or ground tare)
+float low_pass_baro_alt = 0.0f;
+extern float baroLPFAltitude;
+
 float update_altitude_fusion(float dt) {
-    // --- IMU PREDICTION (still runs at 1666 Hz) ---
+    // 1. --- IMU PREDICTION (Runs every cycle at 1666 Hz) ---
     fused_vel += sensor_data.acc_earth_z * dt;
     fused_alt += fused_vel * dt;
 
-    // --- BARO CORRECTION ---
+    // 2. --- BARO CORRECTION (Runs only when a new sensor sample arrives) ---
     if (new_baro_ready) {
-        float baro_relative_alt = baro_altitude - ground_altitude;
-        float old_fused_alt = fused_alt;
+        float baro_relative_alt = baroLPFAltitude - ground_altitude;
 
-        // === INCREASED BARO TRUST ===
-        const float BARO_ALPHA = 0.05f;        // 35% baro, 65% IMU prediction
-        // You can go up to 0.5f+ depending on your baro quality and vibration levels
+        // --- BAROMETER LOW-PASS FILTER (LPF) ---
+        // BARO_ALPHA ranges from 0.0 to 1.0. Lower means smoother but adds lag.
+        // 0.15f blocks high-frequency pressure spikes while preserving fast tracking.
+        const float BARO_ALPHA = 0.15f;
+        low_pass_baro_alt = (baro_relative_alt * BARO_ALPHA) + (low_pass_baro_alt * (1.0f - BARO_ALPHA));
 
-        fused_alt = baro_relative_alt * BARO_ALPHA + old_fused_alt * (1.0f - BARO_ALPHA);
-      //  fused_alt = (baro_relative_alt * 0.006f) + (old_fused_alt * 0.994f);
-        // Velocity correction - slightly reduced because baro is now stronger
-        float position_shift = fused_alt - old_fused_alt;
-        const float VELOCITY_CORRECTION_GAIN = 1.6f;   // Lowered from ~2.1
+        // Calculate tracking error based on the clean, filtered barometer data
+        float position_error = low_pass_baro_alt - fused_alt;
 
-        fused_vel += position_shift * VELOCITY_CORRECTION_GAIN;
+        // --- COMPLEMENTARY FUSION TRACKING GAINS ---
+        const float ALT_CORRECTION_GAIN = 0.15f;  // Snaps fused altitude to filtered baro
+        const float VEL_CORRECTION_GAIN = 1.20f;  // Corrects IMU velocity integration drift
 
-        // Gentle velocity damping (helps when trusting baro more)
-        fused_vel *= 0.9995f;
+        // Apply corrections to our primary states
+        fused_alt += position_error * ALT_CORRECTION_GAIN;
+        fused_vel += position_error * VEL_CORRECTION_GAIN;
 
+        // Clear flag until the next hardware read registers
         new_baro_ready = false;
     }
+
+    // 3. --- SYSTEM DAMPING & OUTPUT ---
+    fused_vel *= 0.9f;
+
+    // Telemetry output for graph checking
+    uint8_t size = sprintf(buffer, "%f, %f\r\n", fused_vel, fused_alt);
+    usb_print(buffer, size);
 
     alt_fused = fused_alt;
     return fused_alt;
@@ -84,15 +102,7 @@ float compute_altitude_hold_throttle(float dt) {
 #ifdef ONE_SHOT_ESCS
 float compute_altitude_hold_throttle(float dt) {
 
-    // 1. INITIALIZATION & SAFETY CHECK
-    if (armed_status != ARMED) {
-        alt_hold_initialized = false;
 
-        // Map disarmed manual stick (1000-2000) straight to hardware ticks
-        float manual_pwm = (float)radio.throttle;
-        float manual_ticks = ((manual_pwm - 1000.0f) * 34.375f) + ONESHOT125_MIN;
-        return manual_ticks;
-    }
      update_altitude_fusion( dt);
 
     // 2. COMPUTE PID ADJUSTMENT IN STANDARD PWM DOMAIN (1000-2000us)

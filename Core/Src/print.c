@@ -6,14 +6,17 @@
  */
 
 #include "print.h"
+
+//#define DEBUG_BUILD
+
 extern USBD_HandleTypeDef hUsbDeviceHS;
 extern uint8_t UserRxBufferHS[APP_RX_DATA_SIZE];
-void usb_print(uint8_t *buffer, uint16_t size)
+void usb_print(char *buffer, uint16_t size)
 {
-	CDC_Transmit_HS(buffer,size);
-	static int a = 0;
 
-
+#ifdef DEBUG_BUILD
+	CDC_Transmit_HS((uint8_t*)buffer,size);
+#endif
 }
 
 

@@ -84,57 +84,11 @@ void imuMahonyUpdate(float dt, float gx, float gy, float gz, float ax, float ay,
 void imuComputeRotationMatrix(void);
 void getEulerAngles(float *roll, float *pitch);
 
-extern uint8_t buffer[256];
+extern char buffer[256];
 //	/* USER CODE END 2 */
 float roll_copter = 0.0f;
 float pitch_copter = 0.0f;
 
-#ifdef MOTION_FX_ST
-void motionfx_init(void) {
-	/* Check if statically allocated memory size is sufficient
-	 to store MotionFX algorithm state and resize if necessary */
-	if (STATE_SIZE < MotionFX_GetStateSize()) {
-		__disable_irq();
-		while (1) {
-		}
-	}
-
-	/* Sensor Fusion API initialization function */
-	MotionFX_initialize((MFXState_t*) mfxstate);
-	/* Optional: Get version */
-	MotionFX_GetLibVersion(lib_version_mfx);
-	/* Modify knobs settings & set the knobs */
-	MotionFX_getKnobs(mfxstate, &iKnobs);
-	// 2. Adjust for a Drone (High vibration environment)
-//	iKnobs.ATime = 0.8f;
-//	iKnobs.FrTime =0.8f;
-	//iKnobs.MTime=1.0f;
-	iKnobs.LMode = 0;
-	iKnobs.modx = 1;
-	iKnobs.acc_orientation[0] = 'w';
-	iKnobs.acc_orientation[1] = 's';
-	iKnobs.acc_orientation[2] = 'u';
-	iKnobs.gyro_orientation[0] = 'w';
-	iKnobs.gyro_orientation[1] = 's';
-	iKnobs.gyro_orientation[2] = 'u';
-
-	// 3. Set the coordinate system
-	// Most flight controllers use NED (North East Down)
-	iKnobs.output_type = MFX_ENGINE_OUTPUT_NED;
-	MotionFX_setKnobs(mfxstate, &iKnobs);
-	MotionFX_enable_6X(mfxstate, MFX_ENGINE_DISABLE);
-	MotionFX_enable_9X(mfxstate, MFX_ENGINE_DISABLE);
-	/* Enable 9-axis sensor fusion */
-	if (ENABLE_6X == 1) {
-		MotionFX_enable_6X(mfxstate, MFX_ENGINE_ENABLE);
-	} else {
-		MotionFX_enable_9X(mfxstate, MFX_ENGINE_ENABLE);
-	}
-
-
-
-}
-#endif
 /* Using Sensor Fusion algorithm */
 void sensor_fusion_update(void) {
 
@@ -208,7 +162,7 @@ void sensor_fusion_update(void) {
 
 
 
-// calculate_linear_acceleration() ;
+ calculate_linear_acceleration() ;
 
 }
 

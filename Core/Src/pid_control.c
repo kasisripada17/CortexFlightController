@@ -1,61 +1,36 @@
-#include "pid_control.h"
-#include "print.h"
+
 #include <stdint.h>
 #include <stdio.h>
-extern uint8_t buffer[256];
+#include <math.h> // Mandated for standard isnan() and isinf() safety guards
+
+#include "pid_control.h"
+#include "print.h"
+
+
+
+extern char buffer[256];
 extern uint8_t size;
 
 
-//Flight_Control_t fc = {
-//    // Inner Rate Loops (The "Muscle")
-//    .roll = {
-//        .kp = 1.25f, .ki = 0.04f, .kd = 0.012f, .kff = 0.0f,
-//        .max_i_output = 24000.0f, // Lowered from 700 to safely prevent aggressive ground wind-up
-//        .max_output = 13750.0f,
-//        .d_cutoff_hz = 50.0f,  // FIX: Drop to 30Hz to aggressively clean out frame noise
-//        .integral = 0.0f, .last_error = 0.0f, .last_input = 0.0f,
-//        .last_d_term = 0.0f, .last_target = 0.0f, .d_filter_alpha = 0.0f, .output = 0.0f
-//    },
-//    .pitch = {
-//        .kp = 0.95f, .ki = 0.04f, .kd = 0.009f, .kff = 0.0f,
-//        .max_i_output = 24000.0f, // Lowered to prevent asymmetric pitching on takeoff
-//        .max_output = 13750.0f,
-//        .d_cutoff_hz = 50.0f,  // FIX: Match Roll's low-pass floor
-//        .integral = 0.0f, .last_error = 0.0f, .last_input = 0.0f,
-//        .last_d_term = 0.0f, .last_target = 0.0f, .d_filter_alpha = 0.0f, .output = 0.0f
-//    },
-//    .yaw = {
-//        .kp = 2.0f, .ki = 0.08f, .kd = 0.0f, .kff = 0.0f,
-//        .max_i_output = 24000.0f, .max_output = 13750.0f, .d_cutoff_hz = 50.0f,
-//        .integral = 0.0f, .last_error = 0.0f, .last_input = 0.0f,
-//        .last_d_term = 0.0f, .last_target = 0.0f, .d_filter_alpha = 0.0f, .output = 0.0f
-//    },
-//
-//    // Outer Angle Loops (The "Brain" for Leveling)
-//    .roll_angle_p  = 5.0f, // FIX: Dropped from 5.0f to stop pendulum over-correction
-//    .pitch_angle_p = 5.0f, // FIX: Dropped from 5.0f to match roll dampening stability
-//
-//    // Altitude Management
-//    .target_altitude = 0.0f,
-//    .hover_throttle  = 1500.0f,
-//    .ground_offset   = 0.0f,
-//
-//    .target_roll_rate  = 0.0f,
-//    .target_pitch_rate = 0.0f,
-//    .target_yaw_rate   = 0.0f
-//};
 
 Flight_Control_t fc = {
-    // Scale gains up so they have the authority to alter a 34,375-count timer scale
-    .roll  = { .kp = 150.0f, .ki = 10.0f, .kd = 5.0f, .max_i_output = 4500.0f, .max_output = 13750.0f, .d_cutoff_hz = 30.0f },
-    .pitch = { .kp = 150.0f, .ki = 10.0f, .kd = 5.0f, .max_i_output = 4500.0f, .max_output = 13750.0f, .d_cutoff_hz = 30.0f },
-    .yaw   = { .kp = 500.0f, .ki = 25.0f, .kd = 0.0f,   .max_i_output = 4500.0f, .max_output = 13750.0f,.d_cutoff_hz = 30.0f },
+	// Scale gains up so they have the authority to alter a 34,375-count timer scale
+	.roll = {.kp = 150.0f, .ki = 10.0f, .kd = 5.0f, .max_i_output = 4500.0f, .max_output = 13750.0f, .d_cutoff_hz = 30.0f},
+	.pitch = {.kp = 150.0f, .ki = 10.0f, .kd = 5.0f, .max_i_output = 4500.0f, .max_output = 13750.0f, .d_cutoff_hz = 30.0f},
+	.yaw = {.kp = 500.0f, .ki = 25.0f, .kd = 0.0f, .max_i_output = 4500.0f, .max_output = 13750.0f,.d_cutoff_hz = 30.0f},
+	.alt = {.kp = 60.0f, .ki = 8.0f, .kd = 30.0f, .max_i_output = 100.0f, .max_output = 250.0f,.d_cutoff_hz = 30.0f},
 
-    .roll_angle_p  = 5.0f,
-    .pitch_angle_p = 5.0f
+	//self level gains
+	.roll_angle_p = 5.0f,
+	.pitch_angle_p = 5.0f,
+	.angle_mode_ki = 0.05f,
+	.angle_mode_max_i = 15.0f,// Maximum corrective rate trim cap (degrees/second)
+
+	//acro mode flight limits
+	.max_rate = 300.0f,
+	.max_tilt_angle = 50.0f
 };
-#include <math.h> // Mandated for standard isnan() and isinf() safety guards
-#include <math.h>
+
 
 /**
  * @brief Computes the PID output for a single flight control axis.

@@ -1,6 +1,6 @@
 ../Core/Src/barometer.c:53:6:MS5611_Init	2
-../Core/Src/barometer.c:88:6:MS5611_Start_Pressure_Conv	1
-../Core/Src/barometer.c:101:6:MS5611_Start_Temp_Conv	1
-../Core/Src/barometer.c:115:10:MS5611_Read_ADC_Result	1
-../Core/Src/barometer.c:137:6:Calculate_Final_Altitude	6
-../Core/Src/barometer.c:212:6:run_barometer_state_machine	7
+../Core/Src/barometer.c:82:6:MS5611_Start_Pressure_Conv	1
+../Core/Src/barometer.c:90:6:MS5611_Start_Temp_Conv	1
+../Core/Src/barometer.c:104:10:MS5611_Read_ADC_Result	2
+../Core/Src/barometer.c:136:6:Calculate_Final_Altitude	13
+../Core/Src/barometer.c:219:6:run_barometer_state_machine	7

@@ -24,7 +24,7 @@ float sample_freq;
 
 extern arm_state_t armed_status;
 extern volatile IMU_Data_t sensor_data;
-extern uint8_t buffer[256];
+extern char buffer[256];
 extern uint16_t size;
 void gyro_calibration_init(void) {
 	sample_freq = LOOP_FREQ;

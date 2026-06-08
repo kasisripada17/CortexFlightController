@@ -12,11 +12,8 @@
 
 
 
-#define MAX_RATE_ACRO 300.0f
-#define MAX_TILT_ANGLE 50.0f
+
 // Tune these based on your frame weight: Start very low to prevent slow oscillation
-#define ANGLE_KI 0.05f
-#define ANGLE_I_MAX 15.0f    // Maximum corrective rate trim cap (degrees/second)
 // --- Step 3: TPA Factor Calculation ---
 // Example: If your old TPA breakpoint was at 1500 (50% throttle),
 // your new breakpoint sits exactly halfway between 34375 and 68750

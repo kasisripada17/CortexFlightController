@@ -23,7 +23,7 @@ typedef enum {
 }PID_tuning_t;
 PID_tuning_t PID_tuning_channel = PID_ROLL;
 PID_tuning_t PID_tuning_gain = PID_KP;
-extern uint8_t buffer[256];
+extern char buffer[256];
 
 
 

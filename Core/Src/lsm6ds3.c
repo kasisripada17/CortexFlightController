@@ -40,7 +40,7 @@ extern bool start_gyro_calibration;
 volatile uint32_t gyro_calib_counter = 0;
 volatile uint32_t acc_calib_counter = 0;
 extern TIM_HandleTypeDef htim2;
-extern uint8_t buffer[256];
+extern char buffer[256];
 extern uint16_t size;
 
 BaroState_t currentBaroState = BARO_STATE_IDLE;
@@ -80,8 +80,6 @@ uint8_t IMU_Read_Reg(uint8_t reg_addr) {
 }
 uint8_t IMU_Init(void) {
 
-	// Initialize secondary sensors first
-//	MS5611_Init();
 
 	// Verify device connection
 	if (IMU_Read_Reg(0x0F) != 0x69) {
@@ -188,6 +186,7 @@ uint8_t IMU_Init(void) {
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 	if (GPIO_Pin == GPIO_PIN_4) { // PC4 triggered
+		run_barometer_state_machine();
 
 //		static uint32_t now = 0;
 //		static uint32_t prev = 0;
@@ -200,14 +199,16 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 // 1. Start SPI Burst Read (12 bytes)
 		// Address 0x22 (GyroX_L) | 0x80 (Read Bit)
 		uint8_t reg = 0x22 | 0x80;
-		uint8_t buffer[12];
+		uint8_t sensor_buffer[12];
+
+		HAL_SPIEx_FlushRxFifo(&hspi1);
 
 		// Manual CS Low
 		CS_GPIO_Port->BSRR = (uint32_t) CS_Pin << 16;
 
 		// Send address and receive 12 bytes
 		HAL_SPI_Transmit(&hspi1, &reg, 1, 10);
-		HAL_SPI_Receive(&hspi1, buffer, 12, 10);
+		HAL_SPI_Receive(&hspi1, sensor_buffer, 12, 10);
 
 		// Manual CS High
 		CS_GPIO_Port->BSRR = CS_Pin;
@@ -216,12 +217,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		int16_t angx = 0, angy = 0, angz = 0;
 		int16_t accx = 0, accy = 0, accz = 0;
 		// 2. Reconstruct 16-bit signed integers (Little Endian)
-		angx = (int16_t) ((buffer[1] << 8) | buffer[0]);
-		angy = (int16_t) ((buffer[3] << 8) | buffer[2]);
-		angz = (int16_t) ((buffer[5] << 8) | buffer[4]);
-		accx = (int16_t) ((buffer[7] << 8) | buffer[6]);
-		accy = (int16_t) ((buffer[9] << 8) | buffer[8]);
-		accz = (int16_t) ((buffer[11] << 8) | buffer[10]);
+		angx = (int16_t) ((sensor_buffer[1]  <<  8) | sensor_buffer[0]);
+		angy = (int16_t) ((sensor_buffer[3]  <<  8) | sensor_buffer[2]);
+		angz = (int16_t) ((sensor_buffer[5]  <<  8) | sensor_buffer[4]);
+		accx = (int16_t) ((sensor_buffer[7]  <<  8) | sensor_buffer[6]);
+		accy = (int16_t) ((sensor_buffer[9]  <<  8) | sensor_buffer[8]);
+		accz = (int16_t) ((sensor_buffer[11] << 8)  | sensor_buffer[10]);
 
 		sensor_data.gyro_x = ((float) (angx * 0.0175f));
 		sensor_data.gyro_y = ((float) (angy * 0.0175f));
@@ -241,9 +242,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		static float prevx = 0.0f, prevy = 0.0f, prevz = 0.0f;
 		if (!acc_calib_done) {
 			static uint32_t skip = 0;
-
-
-
 
 			if (skip == 3332) {
 
@@ -294,9 +292,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 					((float) (sensor_data.gyro_y - gyro_bias[1]));
 			sensor_data.gyro_cal_z =
 					((float) (sensor_data.gyro_z - gyro_bias[2]));
+			static bool one_time = 1;
 
-		}
-		else {
+		} else {
 			sensor_data.gyro_cal_x = sensor_data.gyro_x;
 			sensor_data.gyro_cal_y = sensor_data.gyro_y;
 			sensor_data.gyro_cal_z = sensor_data.gyro_z;
@@ -304,14 +302,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 		prevx = sensor_data.acc_x;
 		prevy = sensor_data.acc_y;
 		prevz = sensor_data.acc_z;
-
-		///run_barometer_state_machine() ;
-
+		HAL_SPIEx_FlushRxFifo(&hspi1);
 
 		sensor_fusion_update();
 
 		flight_control();
-
 
 	}
 
